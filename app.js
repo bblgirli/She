@@ -8,6 +8,9 @@ let auth = null;
 let db = null;
 let firebaseAuthModule = null;
 let firebaseFirestoreModule = null;
+let chatListUnsubscribe = null;
+let contactsUnsubscribe = null;
+let messagesUnsubscribe = null;
 
 async function initializeFirebase() {
     if (!configured || auth || db) return;
@@ -108,11 +111,11 @@ function normalizePhone(value = "") {
 }
 
 async function resolveLoginEmailFromPhone(phone) {
-    if (!configured || !db || !auth) return null;
+    if (!configured || !db || !auth || !firebaseFirestoreModule) return null;
     try {
-        const usersRef = collection(db, "users");
-        const q = query(usersRef, where("phone", "==", phone));
-        const snapshot = await getDocs(q);
+        const usersRef = firebaseFirestoreModule.collection(db, "users");
+        const q = firebaseFirestoreModule.query(usersRef, firebaseFirestoreModule.where("phone", "==", phone));
+        const snapshot = await firebaseFirestoreModule.getDocs(q);
         if (!snapshot.empty) {
             const userData = snapshot.docs[0].data();
             return userData.email || null;
@@ -123,11 +126,22 @@ async function resolveLoginEmailFromPhone(phone) {
     return null;
 }
 
+function getConversationId(firstUid = "", secondUid = "") {
+    const ids = [firstUid, secondUid].filter(Boolean).sort();
+    return ids.length ? ids.join("_") : `conversation-${Date.now()}`;
+}
+
 function conversationKey(contactId = "") {
     const user = getCurrentUser();
-    const fallbackId = contactId || localStorage.getItem("currentChatUid") || localStorage.getItem("currentChat") || "oluwatosin";
-    const base = `${user?.id || user?.uid || user?.email || "guest"}-${fallbackId}`;
-    return base.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const currentUserId = user?.uid || user?.id || user?.email || "guest";
+    const contactUid = contactId || localStorage.getItem("currentChatUid") || "";
+
+    if (contactUid) {
+        return getConversationId(currentUserId, contactUid);
+    }
+
+    const fallbackId = localStorage.getItem("currentChat") || "chat";
+    return `${currentUserId}-${fallbackId}`.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 }
 
 function localMessagesForConversation(key) {
@@ -302,13 +316,17 @@ async function sendMessage() {
 
     if (configured && db && auth && firebaseFirestoreModule) {
         try {
-            await firebaseFirestoreModule.setDoc(firebaseFirestoreModule.doc(db, "conversations", conversationKey()), {
-                participants: [auth.currentUser.uid, localStorage.getItem("currentChatUid") || ""].filter(Boolean),
-                updatedAt: firebaseFirestoreModule.serverTimestamp()
+            const recipientUid = localStorage.getItem("currentChatUid") || "";
+            const conversationId = getConversationId(user.uid || user.id, recipientUid);
+            await firebaseFirestoreModule.setDoc(firebaseFirestoreModule.doc(db, "conversations", conversationId), {
+                participants: [user.uid || user.id, recipientUid].filter(Boolean),
+                updatedAt: firebaseFirestoreModule.serverTimestamp(),
+                lastMessage: text,
+                lastMessageAt: firebaseFirestoreModule.serverTimestamp()
             }, { merge: true });
-            await firebaseFirestoreModule.addDoc(firebaseFirestoreModule.collection(db, "conversations", conversationKey(), "messages"), {
+            await firebaseFirestoreModule.addDoc(firebaseFirestoreModule.collection(db, "conversations", conversationId, "messages"), {
                 text,
-                senderId: auth.currentUser.uid,
+                senderId: user.uid || user.id,
                 createdAt: firebaseFirestoreModule.serverTimestamp()
             });
             input.value = "";
@@ -352,7 +370,11 @@ function togglePassword(id = "password") {
 
 function toggleLoginPassword() { togglePassword("loginPassword"); }
 function handleEnter(event) { if (event.key === "Enter") { event.preventDefault(); sendMessage(); } }
-function openChat(name, uid = "") { localStorage.setItem("currentChat", name); if (uid) localStorage.setItem("currentChatUid", uid); window.location.href = "chat.html"; }
+function openChat(name, uid = "") {
+    localStorage.setItem("currentChat", name || "Chat");
+    if (uid) localStorage.setItem("currentChatUid", uid); else localStorage.removeItem("currentChatUid");
+    window.location.href = "chat.html";
+}
 function goBack() { window.location.href = "chats.html"; }
 function showEmoji() { const input = document.getElementById("messageInput"); if (input) { input.value += "😊"; input.focus(); } }
 function logout() {
@@ -386,13 +408,13 @@ function googleLogin() {
 }
 function editProfileName() { window.location.href = "edit-profile.html"; }
 function goTo(page) { window.location.href = page; }
-function searchChats() { const value = prompt("Search chats:"); if (value) alert(`Searching for: ${value}`); }
-function searchContacts() { const value = prompt("Search contacts:"); if (value) alert(`Searching for: ${value}`); }
-function searchCalls() { const value = prompt("Search calls:"); if (value) alert(`Searching for: ${value}`); }
-function openMenu() { alert("Menu\n\nNew group\nSettings\nProfile"); }
+function searchChats() { const value = prompt("Search chats:"); if (value) { const container = document.getElementById("chatList") || document.querySelector(".chat-list"); if (container) { const items = Array.from(container.querySelectorAll(".chat-item")); items.forEach((item) => { const text = item.textContent.toLowerCase(); item.style.display = text.includes(value.toLowerCase()) ? "flex" : "none"; }); } } }
+function searchContacts() { const value = prompt("Search contacts:"); if (value) { const container = document.getElementById("contactsList") || document.querySelector(".contacts-list") || document.getElementById("newChatList") || document.querySelector(".new-chat-list"); if (container) { const items = Array.from(container.querySelectorAll(".contact-item, .new-chat-action")); items.forEach((item) => { const text = item.textContent.toLowerCase(); item.style.display = text.includes(value.toLowerCase()) ? "flex" : "none"; }); } } }
+function searchCalls() { alert("Calls are managed through your connected contacts."); }
+function openMenu() { window.location.href = "profile.html"; }
 function newChat() { window.location.href = "new-chat.html"; }
 function createGroup() { window.location.href = "new-group.html"; }
-function createContact() { alert("Use the demo account or connect Firebase to invite a real contact."); }
+function createContact() { window.location.href = "signup.html"; }
 function startCall() { alert("Voice calls require a WebRTC service and are not enabled yet."); }
 function startVideoCall() { alert("Video calls require a WebRTC service and are not enabled yet."); }
 function attachFile() { alert("File uploads require Firebase Storage setup."); }
@@ -453,10 +475,64 @@ function hydrateEditProfilePage() {
     if (editPhone) editPhone.value = user.phone || user.email || "";
 }
 
-function renderChatList() {
+function stopRealtimeListeners() {
+    if (chatListUnsubscribe) { chatListUnsubscribe(); chatListUnsubscribe = null; }
+    if (contactsUnsubscribe) { contactsUnsubscribe(); contactsUnsubscribe = null; }
+    if (messagesUnsubscribe) { messagesUnsubscribe(); messagesUnsubscribe = null; }
+}
+
+async function renderChatList() {
     const container = document.getElementById("chatList") || document.querySelector(".chat-list");
     if (!container) return;
 
+    if (configured && db && auth && firebaseFirestoreModule) {
+        const currentUser = getCurrentUser();
+        if (!currentUser) {
+            container.innerHTML = '<div class="message received"><p>Please sign in to see real chats.</p></div>';
+            return;
+        }
+
+        if (chatListUnsubscribe) chatListUnsubscribe();
+        const conversationsRef = firebaseFirestoreModule.collection(db, "conversations");
+        const q = firebaseFirestoreModule.query(conversationsRef, firebaseFirestoreModule.where("participants", "array-contains", currentUser.uid || currentUser.id));
+        chatListUnsubscribe = firebaseFirestoreModule.onSnapshot(q, async (snapshot) => {
+            const conversations = snapshot.docs.map((docItem) => ({ id: docItem.id, ...docItem.data() }))
+                .sort((a, b) => (b.lastMessageAt?.toDate?.() || 0) - (a.lastMessageAt?.toDate?.() || 0));
+
+            const items = await Promise.all(conversations.map(async (conversation) => {
+                const otherUid = (conversation.participants || []).find((participant) => participant !== (currentUser.uid || currentUser.id));
+                let otherUser = null;
+                if (otherUid && firebaseFirestoreModule) {
+                    const otherDoc = await firebaseFirestoreModule.getDoc(firebaseFirestoreModule.doc(db, "users", otherUid));
+                    if (otherDoc.exists()) {
+                        otherUser = { uid: otherDoc.id, ...otherDoc.data() };
+                    }
+                }
+                const name = otherUser?.displayName || otherUser?.email || "New chat";
+                const preview = conversation.lastMessage || "Start the conversation";
+                const time = conversation.lastMessageAt?.toDate ? formatTime(conversation.lastMessageAt) : "Now";
+                return `
+                    <div class="chat-item" onclick="openChat('${escapeHTML(name)}', '${otherUid || ""}')">
+                        <div class="avatar">👤</div>
+                        <div class="chat-details">
+                            <div class="chat-top">
+                                <h3>${escapeHTML(name)}</h3>
+                                <span>${time}</span>
+                            </div>
+                            <div class="chat-bottom">
+                                <p>${escapeHTML(preview)}</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }));
+
+            container.innerHTML = items.join("") || '<div class="message received"><p>No conversations yet. Open a real contact to start chatting.</p></div>';
+        });
+        return;
+    }
+
+    const state = readState();
     const contacts = [
         { name: "Oluwatosin", uid: "oluwatosin", avatar: "👩🏾", about: "Available" },
         { name: "Abdullahi", uid: "abdullahi", avatar: "👨🏾", about: "Hey there!" },
@@ -464,7 +540,6 @@ function renderChatList() {
         { name: "Michael", uid: "michael", avatar: "👨🏾", about: "Available" }
     ];
 
-    const state = readState();
     const html = contacts.map((contact) => {
         const key = conversationKey(contact.uid);
         const messages = state.messages[key] || [];
@@ -491,6 +566,84 @@ function renderChatList() {
     container.innerHTML = html;
 }
 
+function renderContactsList() {
+    const container = document.getElementById("contactsList") || document.querySelector(".contacts-list") || document.getElementById("newChatList") || document.querySelector(".new-chat-list");
+    if (!container) return;
+
+    if (configured && db && auth && firebaseFirestoreModule) {
+        const currentUser = getCurrentUser();
+        if (!currentUser) {
+            container.innerHTML = '<div class="message received"><p>Please sign in to see real contacts.</p></div>';
+            return;
+        }
+
+        if (contactsUnsubscribe) contactsUnsubscribe();
+        const usersRef = firebaseFirestoreModule.collection(db, "users");
+        contactsUnsubscribe = firebaseFirestoreModule.onSnapshot(usersRef, (snapshot) => {
+            const users = snapshot.docs
+                .map((docItem) => ({ uid: docItem.id, ...docItem.data() }))
+                .filter((userEntry) => userEntry.uid && userEntry.uid !== (currentUser.uid || currentUser.id));
+
+            const html = users.length ? users.map((userEntry) => {
+                const name = userEntry.displayName || userEntry.email || "User";
+                const status = userEntry.about || "Available";
+                return `
+                    <div class="contact-item" onclick="openChat('${escapeHTML(name)}', '${userEntry.uid}')">
+                        <div class="avatar">👤</div>
+                        <div class="contact-details">
+                            <h3>${escapeHTML(name)}</h3>
+                            <p>${escapeHTML(status)}</p>
+                        </div>
+                    </div>
+                `;
+            }).join("") : '<div class="message received"><p>No other users yet. Create another account to chat with someone real.</p></div>';
+
+            container.innerHTML = html;
+        });
+        return;
+    }
+}
+
+function renderMessagesForConversation() {
+    const messagesContainer = document.getElementById("messages");
+    if (!messagesContainer) return;
+
+    if (configured && db && auth && firebaseFirestoreModule) {
+        const currentUser = getCurrentUser();
+        const recipientUid = localStorage.getItem("currentChatUid") || "";
+        if (!currentUser || !recipientUid) {
+            messagesContainer.innerHTML = '<div class="message received"><p>Select a real contact to start chatting.</p></div>';
+            return;
+        }
+
+        if (messagesUnsubscribe) messagesUnsubscribe();
+        const conversationId = getConversationId(currentUser.uid || currentUser.id, recipientUid);
+        const messagesRef = firebaseFirestoreModule.collection(db, "conversations", conversationId, "messages");
+        const q = firebaseFirestoreModule.query(messagesRef, firebaseFirestoreModule.orderBy("createdAt", "asc"));
+        messagesUnsubscribe = firebaseFirestoreModule.onSnapshot(q, (snapshot) => {
+            const items = snapshot.docs.map((docItem) => ({ id: docItem.id, ...docItem.data() }));
+            messagesContainer.innerHTML = "";
+            if (!items.length) {
+                const empty = document.createElement("div");
+                empty.className = "message received";
+                empty.innerHTML = "<p>No messages yet. Start the conversation.</p><span>Now</span>";
+                messagesContainer.appendChild(empty);
+                return;
+            }
+            items.forEach((item) => {
+                const wrapper = document.createElement("div");
+                wrapper.className = `message ${item.senderId === (currentUser.uid || currentUser.id) ? "sent" : "received"}`;
+                wrapper.innerHTML = `<p>${escapeHTML(item.text)}</p><span>${formatTime(item.createdAt)}</span>`;
+                messagesContainer.appendChild(wrapper);
+            });
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        });
+        return;
+    }
+
+    renderLocalMessages();
+}
+
 function hydrateChatPage() {
     const headerName = document.querySelector(".chat-profile h3");
     const currentName = localStorage.getItem("currentChat") || "Chat";
@@ -499,7 +652,7 @@ function hydrateChatPage() {
         window.location.href = "login.html";
         return;
     }
-    renderLocalMessages();
+    renderMessagesForConversation();
 }
 
 async function initializeApp() {
@@ -521,7 +674,11 @@ async function initializeApp() {
     }
 
     if (document.getElementById("chatList") || document.querySelector(".chat-list")) {
-        renderChatList();
+        await renderChatList();
+    }
+
+    if (document.querySelector(".contacts-list") || document.querySelector(".new-chat-list")) {
+        renderContactsList();
     }
 
     if (document.getElementById("displayName") || document.getElementById("profileName") || document.getElementById("profileAbout")) {
