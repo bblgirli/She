@@ -19,6 +19,8 @@ let firebaseFirestoreModule = null;
 let chatListUnsubscribe = null;
 let contactsUnsubscribe = null;
 let messagesUnsubscribe = null;
+let authStateResolved = false;
+let authStatePromiseResolve = null;
 
 async function initializeFirebase() {
     if (!configured || auth || db) return;
@@ -32,7 +34,19 @@ async function initializeFirebase() {
         firebaseFirestoreModule = firestoreModule;
         firebaseApp = appModule.initializeApp(firebaseConfig);
         auth = authModule.getAuth(firebaseApp);
+        await firebaseAuthModule.setPersistence(auth, firebaseAuthModule.browserLocalPersistence);
         db = firestoreModule.getFirestore(firebaseApp);
+
+        firebaseAuthModule.onAuthStateChanged(auth, (user) => {
+            handleFirebaseAuthState(user);
+            if (!authStateResolved) {
+                authStateResolved = true;
+                if (authStatePromiseResolve) {
+                    authStatePromiseResolve();
+                    authStatePromiseResolve = null;
+                }
+            }
+        });
     } catch (error) {
         console.warn("Firebase unavailable; falling back to local mode.", error);
         configured = false;
@@ -75,21 +89,46 @@ function currentUserFromStorage() {
 }
 
 function getCurrentUser() {
-    if (configured && auth && auth.currentUser) {
-        return {
-            id: auth.currentUser.uid,
-            uid: auth.currentUser.uid,
-            email: auth.currentUser.email,
-            displayName: auth.currentUser.displayName || "",
-            phone: "",
-            about: "Available"
-        };
+    if (configured && auth) {
+        if (auth.currentUser) {
+            return getFirebaseUserData(auth.currentUser);
+        }
+        return null;
     }
     return currentUserFromStorage();
 }
 
 function setCurrentUser(user) {
     localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
+}
+
+function clearCurrentUser() {
+    localStorage.removeItem(CURRENT_USER_KEY);
+}
+
+function getFirebaseUserData(user) {
+    if (!user) return null;
+    return {
+        id: user.uid,
+        uid: user.uid,
+        email: user.email || "",
+        displayName: user.displayName || "",
+        phone: user.phoneNumber || "",
+        about: "Available"
+    };
+}
+
+function handleFirebaseAuthState(user) {
+    if (user) {
+        const authUser = getFirebaseUserData(user);
+        setCurrentUser(authUser);
+        if (isAuthPage()) {
+            window.location.href = "chats.html";
+        }
+    } else if (!isAuthPage()) {
+        clearCurrentUser();
+        window.location.href = "login.html";
+    }
 }
 
 function isAuthPage() {
@@ -106,8 +145,85 @@ function requireAuth() {
     return true;
 }
 
+function waitForAuthState() {
+    if (!configured || authStateResolved) return Promise.resolve();
+    return new Promise((resolve) => {
+        authStatePromiseResolve = resolve;
+    });
+}
+
+function forgotPassword() {
+    const identifier = prompt("Enter your email address or phone number:");
+    if (!identifier) return;
+
+    if (configured && auth && firebaseAuthModule) {
+        const email = identifier.includes("@") ? identifier : null;
+        if (!email) {
+            alert("Forgot password via phone is only supported when Firebase is configured with phone-based auth. Please enter your email to receive a reset link.");
+            return;
+        }
+        firebaseAuthModule.sendPasswordResetEmail(auth, email)
+            .then(() => alert("Password reset email sent."))
+            .catch(showError);
+        return;
+    }
+
+    const state = readState();
+    const normalized = identifier.includes("@") ? identifier.toLowerCase() : normalizePhone(identifier);
+    const account = state.accounts.find((entry) => {
+        const emailMatch = entry.email && entry.email.toLowerCase() === normalized;
+        const phoneMatch = entry.phone && normalizePhone(entry.phone) === normalized;
+        return emailMatch || phoneMatch;
+    });
+
+    if (!account) {
+        alert("No local account found for that email or phone number.");
+        return;
+    }
+
+    const newPassword = prompt("Enter your new password:");
+    if (!newPassword) {
+        alert("Password reset canceled.");
+        return;
+    }
+    const confirmPassword = prompt("Confirm your new password:");
+    if (newPassword !== confirmPassword) {
+        alert("Passwords do not match. Please try again.");
+        return;
+    }
+
+    account.password = newPassword;
+    writeState(state);
+    alert("Password updated successfully. You can now log in with your new password.");
+}
+
 function showError(error) {
     alert(error?.message || error || "Something went wrong.");
+}
+
+function isFirebaseReady() {
+    return configured && auth && firebaseAuthModule;
+}
+
+function updateFirebaseStatus() {
+    const statusElement = document.getElementById("firebaseStatus");
+    const googleButton = document.querySelector(".google-button");
+    if (!statusElement || !googleButton) return;
+
+    if (!configured) {
+        statusElement.textContent = "Firebase is not configured, so Google login is unavailable.";
+        googleButton.disabled = true;
+        return;
+    }
+
+    if (!auth || !firebaseAuthModule) {
+        statusElement.textContent = "Firebase is loading... please wait.";
+        googleButton.disabled = true;
+        return;
+    }
+
+    statusElement.textContent = "Firebase is available. Use Google login or standard credentials.";
+    googleButton.disabled = false;
 }
 
 function normalizePhone(value = "") {
@@ -230,6 +346,8 @@ async function handleSignup(event) {
         try {
             const result = await firebaseAuthModule.createUserWithEmailAndPassword(auth, email, password);
             await firebaseAuthModule.updateProfile(result.user, { displayName: name });
+            const signedInUser = getFirebaseUserData(result.user);
+            setCurrentUser(signedInUser);
             await saveUserProfile(result.user, { displayName: name, phone });
             window.location.href = "chats.html";
             return;
@@ -281,14 +399,8 @@ async function handleLogin(event) {
                 throw new Error("No account matched that phone number.");
             }
             const result = await firebaseAuthModule.signInWithEmailAndPassword(auth, emailForLogin, password);
-            setCurrentUser({
-                id: result.user.uid,
-                uid: result.user.uid,
-                email: result.user.email,
-                displayName: result.user.displayName || "",
-                phone,
-                about: "Available"
-            });
+            const signedInUser = getFirebaseUserData(result.user);
+            setCurrentUser(signedInUser);
             window.location.href = "chats.html";
             return;
         } catch (error) {
@@ -401,21 +513,27 @@ function logout() {
         window.location.href = "login.html";
     }
 }
-function forgotPassword() {
-    const email = prompt("Enter your email address:");
-    if (!email) return;
-    if (configured && auth && firebaseAuthModule) {
-        firebaseAuthModule.sendPasswordResetEmail(auth, email).then(() => alert("Password reset email sent.")).catch(showError);
+async function googleLogin() {
+    if (!configured) {
+        alert("Google sign-in requires Firebase configuration. Please fill in firebase-config.js.");
         return;
     }
-    alert("Password reset is available once Firebase Auth is configured.");
-}
-function googleLogin() {
-    if (configured && auth && firebaseAuthModule) {
-        firebaseAuthModule.signInWithPopup(auth, new firebaseAuthModule.GoogleAuthProvider()).then(() => window.location.href = "chats.html").catch(showError);
+
+    if (!auth || !firebaseAuthModule) {
+        alert("Firebase is still loading. Please try again in a moment.");
         return;
     }
-    alert("Google sign-in will work once Firebase Auth is configured.");
+
+    try {
+        const provider = new firebaseAuthModule.GoogleAuthProvider();
+        const result = await firebaseAuthModule.signInWithPopup(auth, provider);
+        const signedInUser = getFirebaseUserData(result.user);
+        setCurrentUser(signedInUser);
+        await saveUserProfile(result.user, { displayName: result.user.displayName || "", phone: result.user.phoneNumber || "" });
+        window.location.href = "chats.html";
+    } catch (error) {
+        showError(error);
+    }
 }
 function editProfileName() { window.location.href = "edit-profile.html"; }
 function goTo(page) { window.location.href = page; }
@@ -722,7 +840,9 @@ function hydrateChatPage() {
 
 async function initializeApp() {
     await initializeFirebase();
-    if (!configured) {
+    if (configured) {
+        await waitForAuthState();
+    } else {
         ensureAccountSeed();
     }
     if (!requireAuth()) return;
@@ -733,6 +853,8 @@ async function initializeApp() {
     if (document.getElementById("loginForm")) {
         document.getElementById("loginForm").addEventListener("submit", handleLogin);
     }
+
+    updateFirebaseStatus();
 
     if (document.getElementById("messages")) {
         hydrateChatPage();
