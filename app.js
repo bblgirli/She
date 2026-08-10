@@ -459,6 +459,20 @@ async function handleLogin(event) {
             window.location.href = "chats.html";
             return;
         } catch (error) {
+            const state = readState();
+            const account = state.accounts.find((entry) => {
+                const matchesPhone = entry.phone && normalizePhone(entry.phone) === loginIdentifier;
+                const matchesEmail = entry.email && entry.email.toLowerCase() === loginIdentifier.toLowerCase();
+                if (!matchesPhone && !matchesEmail) return false;
+                if (entry.provider === "google") return true;
+                if (!password) return false;
+                return entry.password === password;
+            });
+            if (account) {
+                setCurrentUser(account);
+                window.location.href = "chats.html";
+                return;
+            }
             showError(error);
             return;
         }
