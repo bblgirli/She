@@ -30,6 +30,14 @@
 
     </header>
 
+    <div class="search-bar">
+        <input
+            type="search"
+            id="newChatSearch"
+            placeholder="Search users on this app"
+            oninput="searchContactsInput(event)"
+        >
+    </div>
 
     <main class="new-chat-list">
 
@@ -86,8 +94,10 @@
             Contacts on this app
         </h4>
 
-        <div class="message received">
-            <p>Your saved contacts will appear here once you add someone by phone number.</p>
+        <div id="newChatResults">
+            <div class="message received">
+                <p>Your saved contacts will appear here once you add someone by phone number.</p>
+            </div>
         </div>
 
     </main>

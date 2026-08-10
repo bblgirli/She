@@ -20,6 +20,14 @@
         </div>
     </header>
 
+    <div class="search-bar">
+        <input
+            type="search"
+            id="contactsSearch"
+            placeholder="Search contacts"
+            oninput="searchContactsInput(event)"
+        >
+    </div>
 
     <main class="contacts-list">
 
@@ -47,8 +55,10 @@
             Contacts
         </h4>
 
-        <div class="message received">
-            <p>Add someone by phone number to build your real contact list.</p>
+        <div id="contactsResults">
+            <div class="message received">
+                <p>Add someone by phone number to build your real contact list.</p>
+            </div>
         </div>
 
     </main>

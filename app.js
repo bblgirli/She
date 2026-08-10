@@ -19,6 +19,8 @@ let firebaseFirestoreModule = null;
 let chatListUnsubscribe = null;
 let contactsUnsubscribe = null;
 let messagesUnsubscribe = null;
+let contactsCache = [];
+let currentContactsSearch = "";
 let authStateResolved = false;
 let authStatePromiseResolve = null;
 
@@ -89,21 +91,50 @@ function currentUserFromStorage() {
 }
 
 function getCurrentUser() {
-    if (configured && auth) {
-        if (auth.currentUser) {
-            return getFirebaseUserData(auth.currentUser);
-        }
-        return null;
+    const storedUser = currentUserFromStorage();
+    if (configured && auth && auth.currentUser) {
+        return storedUser || getFirebaseUserData(auth.currentUser);
     }
-    return currentUserFromStorage();
+    return storedUser;
 }
 
 function setCurrentUser(user) {
+    if (!user) {
+        localStorage.removeItem(CURRENT_USER_KEY);
+        return;
+    }
     localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
 }
 
 function clearCurrentUser() {
     localStorage.removeItem(CURRENT_USER_KEY);
+}
+
+async function loadUserProfile(user) {
+    if (!configured || !db || !firebaseFirestoreModule || !user) return null;
+    try {
+        const userDoc = firebaseFirestoreModule.doc(db, "users", user.uid);
+        const snapshot = await firebaseFirestoreModule.getDoc(userDoc);
+        if (snapshot.exists()) {
+            const profileData = snapshot.data();
+            const mergedUser = {
+                id: user.uid,
+                uid: user.uid,
+                email: user.email || "",
+                displayName: profileData.displayName || user.displayName || "",
+                phone: profileData.phone || user.phoneNumber || "",
+                about: profileData.about || "Available",
+                username: profileData.username || (user.email ? user.email.split("@")[0] : ""),
+                photoURL: profileData.photoURL || profileData.profilePicture || user.photoURL || "",
+                userId: user.uid
+            };
+            setCurrentUser(mergedUser);
+            return mergedUser;
+        }
+    } catch (error) {
+        console.warn("Unable to load user profile from Firestore.", error);
+    }
+    return null;
 }
 
 function getFirebaseUserData(user) {
@@ -114,7 +145,10 @@ function getFirebaseUserData(user) {
         email: user.email || "",
         displayName: user.displayName || "",
         phone: user.phoneNumber || "",
-        about: "Available"
+        about: "Available",
+        username: user.email ? user.email.split("@")[0] : "",
+        photoURL: user.photoURL || "",
+        userId: user.uid
     };
 }
 
@@ -122,6 +156,7 @@ function handleFirebaseAuthState(user) {
     if (user) {
         const authUser = getFirebaseUserData(user);
         setCurrentUser(authUser);
+        loadUserProfile(user).catch(() => {});
         if (isAuthPage()) {
             window.location.href = "chats.html";
         }
@@ -279,6 +314,15 @@ function saveLocalMessages(key, messages) {
     writeState(state);
 }
 
+function messageStatusLabel(item) {
+    if (!item) return "";
+    const isSender = item.senderId === getCurrentUser()?.uid || item.senderId === getCurrentUser()?.id;
+    if (isSender) {
+        return item.status ? item.status : "Sent";
+    }
+    return item.status ? item.status : "Received";
+}
+
 function renderLocalMessages() {
     const messages = document.getElementById("messages");
     if (!messages) return;
@@ -295,7 +339,7 @@ function renderLocalMessages() {
     items.forEach((item) => {
         const wrapper = document.createElement("div");
         wrapper.className = `message ${item.senderId === getCurrentUser()?.id || item.senderId === getCurrentUser()?.uid ? "sent" : "received"}`;
-        wrapper.innerHTML = `<p>${escapeHTML(item.text)}</p><span>${formatTime(item.createdAt)}</span>`;
+        wrapper.innerHTML = `<p>${escapeHTML(item.text)}</p><span>${formatTime(item.createdAt)} • ${escapeHTML(messageStatusLabel(item))}</span>`;
         messages.appendChild(wrapper);
     });
     messages.scrollTop = messages.scrollHeight;
@@ -304,15 +348,21 @@ function renderLocalMessages() {
 async function saveUserProfile(user, data = {}) {
     await initializeFirebase();
     const phone = normalizePhone(data.phone || "");
+    const usernameValue = data.username || (data.displayName ? data.displayName.replace(/\s+/g, "").toLowerCase() : user.email ? user.email.split("@")[0] : "");
+    const profileData = {
+        uid: user.uid,
+        userId: user.uid,
+        email: user.email,
+        displayName: data.displayName || user.displayName || "",
+        username: usernameValue,
+        phone,
+        about: data.about || "Available",
+        photoURL: data.photoURL || user.photoURL || "",
+        updatedAt: firebaseFirestoreModule ? firebaseFirestoreModule.serverTimestamp() : null
+    };
+
     if (configured && db && auth && firebaseFirestoreModule) {
-        await firebaseFirestoreModule.setDoc(firebaseFirestoreModule.doc(db, "users", user.uid), {
-            uid: user.uid,
-            email: user.email,
-            displayName: data.displayName || user.displayName || "",
-            phone,
-            about: data.about || "Available",
-            updatedAt: firebaseFirestoreModule.serverTimestamp()
-        }, { merge: true });
+        await firebaseFirestoreModule.setDoc(firebaseFirestoreModule.doc(db, "users", user.uid), profileData, { merge: true });
         return;
     }
 
@@ -320,9 +370,12 @@ async function saveUserProfile(user, data = {}) {
     const account = state.accounts.find((entry) => entry.email.toLowerCase() === (user.email || "").toLowerCase());
     if (!account) return;
     Object.assign(account, {
-        displayName: data.displayName || account.displayName || "",
-        phone: data.phone || account.phone || "",
-        about: data.about || account.about || "Available"
+        displayName: profileData.displayName || account.displayName || "",
+        phone: profileData.phone || account.phone || "",
+        about: profileData.about || account.about || "Available",
+        username: profileData.username || account.username || "",
+        photoURL: profileData.photoURL || account.photoURL || "",
+        userId: profileData.userId || account.userId || account.id
     });
     writeState(state);
     setCurrentUser(account);
@@ -349,6 +402,7 @@ async function handleSignup(event) {
             const signedInUser = getFirebaseUserData(result.user);
             setCurrentUser(signedInUser);
             await saveUserProfile(result.user, { displayName: name, phone });
+            await loadUserProfile(result.user);
             window.location.href = "chats.html";
             return;
         } catch (error) {
@@ -401,6 +455,7 @@ async function handleLogin(event) {
             const result = await firebaseAuthModule.signInWithEmailAndPassword(auth, emailForLogin, password);
             const signedInUser = getFirebaseUserData(result.user);
             setCurrentUser(signedInUser);
+            await loadUserProfile(result.user);
             window.location.href = "chats.html";
             return;
         } catch (error) {
@@ -482,6 +537,7 @@ async function sendMessage() {
             await firebaseFirestoreModule.addDoc(firebaseFirestoreModule.collection(db, "conversations", conversationId, "messages"), {
                 text,
                 senderId: user.uid || user.id,
+                status: "Sent",
                 createdAt: firebaseFirestoreModule.serverTimestamp()
             });
             input.value = "";
@@ -498,6 +554,7 @@ async function sendMessage() {
     list.push({
         text,
         senderId: user.id || user.uid || user.email,
+        status: "Sent",
         createdAt: new Date().toISOString()
     });
     state.messages[key] = list;
@@ -558,7 +615,8 @@ async function googleLogin() {
             const result = await firebaseAuthModule.signInWithPopup(auth, provider);
             const signedInUser = getFirebaseUserData(result.user);
             setCurrentUser(signedInUser);
-            await saveUserProfile(result.user, { displayName: result.user.displayName || "", phone: result.user.phoneNumber || "" });
+            await saveUserProfile(result.user, { displayName: result.user.displayName || "", phone: result.user.phoneNumber || "", photoURL: result.user.photoURL || "" });
+            await loadUserProfile(result.user);
             window.location.href = "chats.html";
         } catch (error) {
             showError(error);
@@ -599,7 +657,106 @@ async function googleLogin() {
 function editProfileName() { window.location.href = "edit-profile.html"; }
 function goTo(page) { window.location.href = page; }
 function searchChats() { const value = prompt("Search chats:"); if (value) { const container = document.getElementById("chatList") || document.querySelector(".chat-list"); if (container) { const items = Array.from(container.querySelectorAll(".chat-item")); items.forEach((item) => { const text = item.textContent.toLowerCase(); item.style.display = text.includes(value.toLowerCase()) ? "flex" : "none"; }); } } }
-function searchContacts() { const value = prompt("Search contacts:"); if (value) { const container = document.getElementById("contactsList") || document.querySelector(".contacts-list") || document.getElementById("newChatList") || document.querySelector(".new-chat-list"); if (container) { const items = Array.from(container.querySelectorAll(".contact-item, .new-chat-action")); items.forEach((item) => { const text = item.textContent.toLowerCase(); item.style.display = text.includes(value.toLowerCase()) ? "flex" : "none"; }); } } }
+function searchContacts() {
+    const input = document.getElementById("contactsSearch") || document.getElementById("newChatSearch");
+    const value = input?.value?.trim();
+    if (value) {
+        currentContactsSearch = value;
+        renderContactsResults();
+        return;
+    }
+
+    const query = prompt("Search contacts:");
+    if (!query) return;
+    currentContactsSearch = query.trim();
+    if (input) {
+        input.value = currentContactsSearch;
+    }
+    renderContactsResults();
+}
+
+function searchContactsInput(event) {
+    currentContactsSearch = event.target.value || "";
+    renderContactsResults();
+}
+
+function getContactsResultsContainer() {
+    return document.getElementById("contactsResults") || document.getElementById("newChatResults") || document.querySelector(".contacts-list") || document.querySelector(".new-chat-list");
+}
+
+function filterContactsData(items, query) {
+    if (!query) return items;
+    const lowerQuery = query.toLowerCase();
+    return items.filter((entry) => {
+        const displayName = `${entry.displayName || ""}`.toLowerCase();
+        const email = `${entry.email || ""}`.toLowerCase();
+        const phone = `${entry.phone || ""}`.toLowerCase();
+        const username = `${entry.username || ""}`.toLowerCase();
+        return displayName.includes(lowerQuery) || email.includes(lowerQuery) || phone.includes(lowerQuery) || username.includes(lowerQuery);
+    });
+}
+
+function renderContactsResults() {
+    const resultsContainer = getContactsResultsContainer();
+    if (!resultsContainer) return;
+    const query = currentContactsSearch.trim();
+
+    if (configured && db && auth && firebaseFirestoreModule) {
+        const users = filterContactsData(contactsCache, query);
+        if (!users.length) {
+            resultsContainer.innerHTML = '<div class="message received"><p>No matching users found.</p></div>';
+            return;
+        }
+        resultsContainer.innerHTML = users.map((userEntry) => {
+            const name = userEntry.displayName || userEntry.email || "User";
+            const status = userEntry.about || "Available";
+            return `
+                <div class="contact-item" onclick="openChat('${escapeHTML(name)}', '${userEntry.uid}')">
+                    <div class="avatar">👤</div>
+                    <div class="contact-details">
+                        <h3>${escapeHTML(name)}</h3>
+                        <p>${escapeHTML(status)}</p>
+                    </div>
+                </div>
+            `;
+        }).join("");
+        return;
+    }
+
+    const state = readState();
+    const currentUser = getCurrentUser();
+    const currentUserKey = currentUser?.id || currentUser?.uid || currentUser?.email || "guest";
+    const phoneList = (state.contacts && state.contacts[currentUserKey]) || [];
+    const contacts = phoneList.map((phone) => {
+        const account = state.accounts.find((entry) => normalizePhone(entry.phone) === normalizePhone(phone));
+        const name = account?.displayName || account?.email || phone;
+        return {
+            name,
+            phone,
+            email: account?.email || "",
+            displayName: name,
+            username: account?.username || "",
+            uid: account?.id || account?.uid || account?.email || phone
+        };
+    });
+
+    const filtered = filterContactsData(contacts, query);
+    if (!filtered.length) {
+        resultsContainer.innerHTML = '<div class="message received"><p>No contacts found.</p></div>';
+        return;
+    }
+
+    resultsContainer.innerHTML = filtered.map((contact) => `
+        <div class="contact-item" onclick="openChat('${escapeHTML(contact.name)}', '${escapeHTML(contact.uid)}')">
+            <div class="avatar">👤</div>
+            <div class="contact-details">
+                <h3>${escapeHTML(contact.name)}</h3>
+                <p>${escapeHTML(contact.phone)}</p>
+            </div>
+        </div>
+    `).join("");
+}
+
 function searchCalls() { alert("Calls are managed through your connected contacts."); }
 function openMenu() { window.location.href = "profile.html"; }
 function newChat() { window.location.href = "new-chat.html"; }
@@ -658,11 +815,16 @@ async function saveProfile() {
         await initializeFirebase();
         const displayName = document.getElementById("editName").value.trim();
         const about = document.getElementById("editAbout").value.trim();
+        const username = document.getElementById("editUsername")?.value.trim();
         if (!displayName) throw new Error("Please enter your name.");
-        if (configured && auth && firebaseAuthModule) {
+        const currentUser = getCurrentUser();
+        if (configured && auth && firebaseAuthModule && auth.currentUser) {
             await firebaseAuthModule.updateProfile(auth.currentUser, { displayName });
+            await saveUserProfile(auth.currentUser, { displayName, about, username, photoURL: currentUser?.photoURL || "" });
+            await loadUserProfile(auth.currentUser);
+        } else {
+            await saveUserProfile(currentUser, { displayName, about, username });
         }
-        await saveUserProfile(getCurrentUser(), { displayName, about });
         window.location.href = "profile.html";
     } catch (error) {
         showError(error);
@@ -674,11 +836,15 @@ function hydrateProfilePage() {
     if (!user) return;
     const displayName = document.getElementById("displayName");
     const profileName = document.getElementById("profileName");
+    const profileUsername = document.getElementById("profileUsername");
+    const profileUserId = document.getElementById("profileUserId");
     const profileAbout = document.getElementById("profileAbout");
     const profilePhone = document.querySelector(".profile-phone");
 
     if (displayName) displayName.textContent = user.displayName || "Your Name";
     if (profileName) profileName.textContent = user.displayName || "Your Name";
+    if (profileUsername) profileUsername.textContent = user.username || user.email?.split("@")[0] || "username";
+    if (profileUserId) profileUserId.textContent = user.userId || user.uid || user.id || "-";
     if (profileAbout) profileAbout.textContent = user.about || "Available";
     if (profilePhone) profilePhone.textContent = user.phone || user.email || "";
 }
@@ -688,10 +854,21 @@ function hydrateEditProfilePage() {
     if (!user) return;
     const editName = document.getElementById("editName");
     const editAbout = document.getElementById("editAbout");
-    const editPhone = document.querySelector("#editProfilePage input[disabled]");
+    const editUsername = document.getElementById("editUsername");
+    const editPhone = document.querySelector(".edit-profile-page input[disabled]");
     if (editName) editName.value = user.displayName || "";
     if (editAbout) editAbout.value = user.about || "";
+    if (editUsername) editUsername.value = user.username || user.email?.split("@")[0] || "";
     if (editPhone) editPhone.value = user.phone || user.email || "";
+}
+
+function hydrateSettingsPage() {
+    const user = getCurrentUser();
+    if (!user) return;
+    const profileName = document.querySelector(".settings-profile h3");
+    const profileStatus = document.querySelector(".settings-profile p");
+    if (profileName) profileName.textContent = user.displayName || user.username || "Your Name";
+    if (profileStatus) profileStatus.textContent = user.about || "Available";
 }
 
 function stopRealtimeListeners() {
@@ -797,7 +974,10 @@ function renderContactsList() {
     if (configured && db && auth && firebaseFirestoreModule) {
         const currentUser = getCurrentUser();
         if (!currentUser) {
-            container.innerHTML = '<div class="message received"><p>Please sign in to see real contacts.</p></div>';
+            const resultsContainer = getContactsResultsContainer();
+            if (resultsContainer) {
+                resultsContainer.innerHTML = '<div class="message received"><p>Please sign in to see real contacts.</p></div>';
+            }
             return;
         }
 
@@ -808,44 +988,13 @@ function renderContactsList() {
                 .map((docItem) => ({ uid: docItem.id, ...docItem.data() }))
                 .filter((userEntry) => userEntry.uid && userEntry.uid !== (currentUser.uid || currentUser.id));
 
-            const html = users.length ? users.map((userEntry) => {
-                const name = userEntry.displayName || userEntry.email || "User";
-                const status = userEntry.about || "Available";
-                return `
-                    <div class="contact-item" onclick="openChat('${escapeHTML(name)}', '${userEntry.uid}')">
-                        <div class="avatar">👤</div>
-                        <div class="contact-details">
-                            <h3>${escapeHTML(name)}</h3>
-                            <p>${escapeHTML(status)}</p>
-                        </div>
-                    </div>
-                `;
-            }).join("") : '<div class="message received"><p>No other users yet. Create another account to chat with someone real.</p></div>';
-
-            container.innerHTML = html;
+            contactsCache = users;
+            renderContactsResults();
         });
         return;
     }
 
-    const state = readState();
-    const currentUser = getCurrentUser();
-    const currentUserKey = currentUser?.id || currentUser?.uid || currentUser?.email || "guest";
-    const phoneList = (state.contacts && state.contacts[currentUserKey]) || [];
-    const html = phoneList.length ? phoneList.map((phone) => {
-        const account = state.accounts.find((entry) => normalizePhone(entry.phone) === normalizePhone(phone));
-        const name = account?.displayName || account?.email || phone;
-        return `
-            <div class="contact-item" onclick="openChat('${escapeHTML(name)}', '${escapeHTML(account?.id || account?.uid || account?.email || phone)}')">
-                <div class="avatar">👤</div>
-                <div class="contact-details">
-                    <h3>${escapeHTML(name)}</h3>
-                    <p>${escapeHTML(phone)}</p>
-                </div>
-            </div>
-        `;
-    }).join("") : '<div class="message received"><p>Add someone by phone number to start chatting.</p></div>';
-
-    container.innerHTML = html;
+    renderContactsResults();
 }
 
 function renderMessagesForConversation() {
@@ -877,7 +1026,7 @@ function renderMessagesForConversation() {
             items.forEach((item) => {
                 const wrapper = document.createElement("div");
                 wrapper.className = `message ${item.senderId === (currentUser.uid || currentUser.id) ? "sent" : "received"}`;
-                wrapper.innerHTML = `<p>${escapeHTML(item.text)}</p><span>${formatTime(item.createdAt)}</span>`;
+                wrapper.innerHTML = `<p>${escapeHTML(item.text)}</p><span>${formatTime(item.createdAt)} • ${escapeHTML(messageStatusLabel(item))}</span>`;
                 messagesContainer.appendChild(wrapper);
             });
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -888,7 +1037,7 @@ function renderMessagesForConversation() {
     renderLocalMessages();
 }
 
-function hydrateChatPage() {
+async function hydrateChatPage() {
     const headerName = document.querySelector(".chat-profile h3");
     const currentName = localStorage.getItem("currentChat") || "Chat";
     if (headerName) headerName.textContent = currentName;
@@ -918,7 +1067,7 @@ async function initializeApp() {
     updateFirebaseStatus();
 
     if (document.getElementById("messages")) {
-        hydrateChatPage();
+        await hydrateChatPage();
     }
 
     if (document.getElementById("chatList") || document.querySelector(".chat-list")) {
@@ -933,8 +1082,12 @@ async function initializeApp() {
         hydrateProfilePage();
     }
 
-    if (document.getElementById("editName") || document.getElementById("editAbout")) {
+    if (document.getElementById("editName") || document.getElementById("editAbout") || document.getElementById("editUsername")) {
         hydrateEditProfilePage();
+    }
+
+    if (document.querySelector(".settings-profile")) {
+        hydrateSettingsPage();
     }
 }
 
