@@ -425,7 +425,36 @@ function searchCalls() { alert("Calls are managed through your connected contact
 function openMenu() { window.location.href = "profile.html"; }
 function newChat() { window.location.href = "new-chat.html"; }
 function createGroup() { window.location.href = "new-group.html"; }
-function createContact() { window.location.href = "signup.html"; }
+function createContact() {
+    const phone = prompt("Enter the phone number of the person you want to add:");
+    if (!phone) return;
+    const normalizedPhone = normalizePhone(phone);
+    if (!normalizedPhone) {
+        showError("Please enter a valid phone number.");
+        return;
+    }
+
+    const currentUser = getCurrentUser();
+    if (!currentUser) {
+        showError("Please sign in first.");
+        return;
+    }
+
+    const state = readState();
+    const contacts = state.contacts || {};
+    contacts[currentUser.id || currentUser.uid || currentUser.email] = contacts[currentUser.id || currentUser.uid || currentUser.email] || [];
+    contacts[currentUser.id || currentUser.uid || currentUser.email].push(normalizedPhone);
+    state.contacts = contacts;
+    writeState(state);
+
+    const foundAccount = state.accounts.find((entry) => normalizePhone(entry.phone) === normalizedPhone);
+    if (foundAccount) {
+        openChat(foundAccount.displayName || foundAccount.email || normalizedPhone, foundAccount.id || foundAccount.uid || foundAccount.email);
+        return;
+    }
+
+    alert(`Added contact request for ${normalizedPhone}. If that number is registered, it will appear in your chats after sign-in.`);
+}
 function startCall() { alert("Voice calls require a WebRTC service and are not enabled yet."); }
 function startVideoCall() { alert("Video calls require a WebRTC service and are not enabled yet."); }
 function attachFile() { alert("File uploads require Firebase Storage setup."); }
@@ -544,25 +573,30 @@ async function renderChatList() {
     }
 
     const state = readState();
-    const contacts = [
-        { name: "Oluwatosin", uid: "oluwatosin", avatar: "👩🏾", about: "Available" },
-        { name: "Abdullahi", uid: "abdullahi", avatar: "👨🏾", about: "Hey there!" },
-        { name: "Jane", uid: "jane", avatar: "👩🏾", about: "Busy" },
-        { name: "Michael", uid: "michael", avatar: "👨🏾", about: "Available" }
-    ];
+    const currentUser = getCurrentUser();
+    const currentUserKey = currentUser?.id || currentUser?.uid || currentUser?.email || "guest";
+    const phoneList = (state.contacts && state.contacts[currentUserKey]) || [];
 
-    const html = contacts.map((contact) => {
-        const key = conversationKey(contact.uid);
+    if (!phoneList.length) {
+        container.innerHTML = '<div class="message received"><p>Add someone by phone number to start a real conversation.</p></div>';
+        return;
+    }
+
+    const html = phoneList.map((phone) => {
+        const account = state.accounts.find((entry) => normalizePhone(entry.phone) === normalizePhone(phone));
+        const name = account?.displayName || account?.email || phone;
+        const uid = account?.id || account?.uid || account?.email || phone;
+        const key = conversationKey(uid);
         const messages = state.messages[key] || [];
         const lastMessage = messages[messages.length - 1];
-        const preview = lastMessage ? lastMessage.text : contact.about;
+        const preview = lastMessage ? lastMessage.text : "Tap to chat";
         const time = lastMessage ? formatTime(lastMessage.createdAt) : "Now";
         return `
-            <div class="chat-item" onclick="openChat('${contact.name}', '${contact.uid}')">
-                <div class="avatar">${contact.avatar}</div>
+            <div class="chat-item" onclick="openChat('${escapeHTML(name)}', '${escapeHTML(uid)}')">
+                <div class="avatar">👤</div>
                 <div class="chat-details">
                     <div class="chat-top">
-                        <h3>${contact.name}</h3>
+                        <h3>${escapeHTML(name)}</h3>
                         <span>${time}</span>
                     </div>
                     <div class="chat-bottom">
@@ -613,6 +647,26 @@ function renderContactsList() {
         });
         return;
     }
+
+    const state = readState();
+    const currentUser = getCurrentUser();
+    const currentUserKey = currentUser?.id || currentUser?.uid || currentUser?.email || "guest";
+    const phoneList = (state.contacts && state.contacts[currentUserKey]) || [];
+    const html = phoneList.length ? phoneList.map((phone) => {
+        const account = state.accounts.find((entry) => normalizePhone(entry.phone) === normalizePhone(phone));
+        const name = account?.displayName || account?.email || phone;
+        return `
+            <div class="contact-item" onclick="openChat('${escapeHTML(name)}', '${escapeHTML(account?.id || account?.uid || account?.email || phone)}')">
+                <div class="avatar">👤</div>
+                <div class="contact-details">
+                    <h3>${escapeHTML(name)}</h3>
+                    <p>${escapeHTML(phone)}</p>
+                </div>
+            </div>
+        `;
+    }).join("") : '<div class="message received"><p>Add someone by phone number to start chatting.</p></div>';
+
+    container.innerHTML = html;
 }
 
 function renderMessagesForConversation() {
