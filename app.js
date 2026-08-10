@@ -211,8 +211,8 @@ function updateFirebaseStatus() {
     if (!statusElement || !googleButton) return;
 
     if (!configured) {
-        statusElement.textContent = "Firebase is not configured, so Google login is unavailable.";
-        googleButton.disabled = true;
+        statusElement.textContent = "Firebase is not configured; Google login will use local fallback.";
+        googleButton.disabled = false;
         return;
     }
 
@@ -387,8 +387,8 @@ async function handleLogin(event) {
     const phone = normalizePhone(`${countryCode}${loginValue}`);
     const loginIdentifier = loginValue.includes("@") ? loginValue.toLowerCase() : phone;
 
-    if (!loginValue || !password) {
-        showError("Please enter your phone number and password.");
+    if (!loginValue) {
+        showError("Please enter your phone number or email.");
         return;
     }
 
@@ -413,14 +413,47 @@ async function handleLogin(event) {
     const account = state.accounts.find((entry) => {
         const matchesPhone = entry.phone && normalizePhone(entry.phone) === loginIdentifier;
         const matchesEmail = entry.email && entry.email.toLowerCase() === loginIdentifier.toLowerCase();
-        return (matchesPhone || matchesEmail) && entry.password === password;
+        if (!matchesPhone && !matchesEmail) return false;
+        if (entry.provider === "google") return true;
+        if (!password) return false;
+        return entry.password === password;
     });
-    if (!account) {
-        showError("No account matched those details. Try demo@example.com / demo123 or create your own account.");
+
+    if (account) {
+        setCurrentUser(account);
+        window.location.href = "chats.html";
         return;
     }
-    setCurrentUser(account);
-    window.location.href = "chats.html";
+
+    if (loginIdentifier.includes("@")) {
+        const existingGoogle = state.accounts.find((entry) => entry.email && entry.email.toLowerCase() === loginIdentifier.toLowerCase() && entry.provider === "google");
+        if (existingGoogle) {
+            setCurrentUser(existingGoogle);
+            window.location.href = "chats.html";
+            return;
+        }
+
+        const create = confirm("No local account matched that email. Create a local Google-style account using this email?");
+        if (create) {
+            const displayName = loginIdentifier.split("@")[0];
+            const user = {
+                id: `local-google-${Date.now()}`,
+                email: loginIdentifier,
+                password: "",
+                displayName,
+                phone: "",
+                about: "Available",
+                provider: "google"
+            };
+            state.accounts.push(user);
+            writeState(state);
+            setCurrentUser(user);
+            window.location.href = "chats.html";
+            return;
+        }
+    }
+
+    showError("No account matched those details. Use Continue with Google or create a new account.");
 }
 
 async function sendMessage() {
@@ -514,26 +547,54 @@ function logout() {
     }
 }
 async function googleLogin() {
-    if (!configured) {
-        alert("Google sign-in requires Firebase configuration. Please fill in firebase-config.js.");
+    if (configured) {
+        if (!auth || !firebaseAuthModule) {
+            alert("Firebase is still loading. Please try again in a moment.");
+            return;
+        }
+
+        try {
+            const provider = new firebaseAuthModule.GoogleAuthProvider();
+            const result = await firebaseAuthModule.signInWithPopup(auth, provider);
+            const signedInUser = getFirebaseUserData(result.user);
+            setCurrentUser(signedInUser);
+            await saveUserProfile(result.user, { displayName: result.user.displayName || "", phone: result.user.phoneNumber || "" });
+            window.location.href = "chats.html";
+        } catch (error) {
+            showError(error);
+        }
         return;
     }
 
-    if (!auth || !firebaseAuthModule) {
-        alert("Firebase is still loading. Please try again in a moment.");
+    const email = prompt("Enter your Google email address:");
+    if (!email) return;
+
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || !normalizedEmail.includes("@")) {
+        showError("Please enter a valid email address.");
         return;
     }
 
-    try {
-        const provider = new firebaseAuthModule.GoogleAuthProvider();
-        const result = await firebaseAuthModule.signInWithPopup(auth, provider);
-        const signedInUser = getFirebaseUserData(result.user);
-        setCurrentUser(signedInUser);
-        await saveUserProfile(result.user, { displayName: result.user.displayName || "", phone: result.user.phoneNumber || "" });
-        window.location.href = "chats.html";
-    } catch (error) {
-        showError(error);
+    const displayName = prompt("Enter your name for Google sign-in:", normalizedEmail.split("@")[0])?.trim() || normalizedEmail.split("@")[0];
+    const state = readState();
+    let account = state.accounts.find((entry) => entry.email && entry.email.toLowerCase() === normalizedEmail);
+
+    if (!account) {
+        account = {
+            id: `local-google-${Date.now()}`,
+            email: normalizedEmail,
+            password: "",
+            displayName,
+            phone: "",
+            about: "Available",
+            provider: "google"
+        };
+        state.accounts.push(account);
+        writeState(state);
     }
+
+    setCurrentUser(account);
+    window.location.href = "chats.html";
 }
 function editProfileName() { window.location.href = "edit-profile.html"; }
 function goTo(page) { window.location.href = page; }
