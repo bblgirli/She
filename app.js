@@ -14,12 +14,14 @@ import {
     addDoc,
     collection,
     doc,
+    getDocs,
     getFirestore,
     onSnapshot,
     orderBy,
     query,
     serverTimestamp,
-    setDoc
+    setDoc,
+    where
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
@@ -107,6 +109,30 @@ function showError(error) {
     alert(error?.message || error || "Something went wrong.");
 }
 
+function normalizePhone(value = "") {
+    const raw = `${value}`.trim();
+    if (!raw) return "";
+    const normalized = raw.replace(/[^\d+]/g, "");
+    if (!normalized) return "";
+    return normalized.startsWith("+") ? normalized : `+${normalized.replace(/^\+/, "")}`;
+}
+
+async function resolveLoginEmailFromPhone(phone) {
+    if (!configured || !db || !auth) return null;
+    try {
+        const usersRef = collection(db, "users");
+        const q = query(usersRef, where("phone", "==", phone));
+        const snapshot = await getDocs(q);
+        if (!snapshot.empty) {
+            const userData = snapshot.docs[0].data();
+            return userData.email || null;
+        }
+    } catch (error) {
+        console.warn("Unable to resolve login email from phone number.", error);
+    }
+    return null;
+}
+
 function conversationKey(contactId = "") {
     const user = getCurrentUser();
     const fallbackId = contactId || localStorage.getItem("currentChatUid") || localStorage.getItem("currentChat") || "oluwatosin";
@@ -148,12 +174,13 @@ function renderLocalMessages() {
 }
 
 async function saveUserProfile(user, data = {}) {
+    const phone = normalizePhone(data.phone || "");
     if (configured && db && auth) {
         await setDoc(doc(db, "users", user.uid), {
             uid: user.uid,
             email: user.email,
             displayName: data.displayName || user.displayName || "",
-            phone: data.phone || "",
+            phone,
             about: data.about || "Available",
             updatedAt: serverTimestamp()
         }, { merge: true });
@@ -178,9 +205,9 @@ async function handleSignup(event) {
     const name = document.getElementById("name").value.trim();
     const email = document.getElementById("email").value.trim();
     const password = document.getElementById("password").value;
-    const phone = `${document.getElementById("countryCode").value}${document.getElementById("phone").value.trim()}`;
+    const phone = normalizePhone(`${document.getElementById("countryCode").value}${document.getElementById("phone").value.trim()}`);
 
-    if (!name || !email || !password) {
+    if (!name || !email || !password || !phone) {
         showError("Please complete the form.");
         return;
     }
@@ -220,17 +247,32 @@ async function handleSignup(event) {
 async function handleLogin(event) {
     event.preventDefault();
     ensureAccountSeed();
-    const email = document.getElementById("loginPhone").value.trim();
+    const loginValue = document.getElementById("loginPhone").value.trim();
     const password = document.getElementById("loginPassword").value;
+    const countryCode = document.getElementById("loginCountryCode")?.value || "+234";
+    const phone = normalizePhone(`${countryCode}${loginValue}`);
+    const loginIdentifier = loginValue.includes("@") ? loginValue.toLowerCase() : phone;
 
-    if (!email || !password) {
-        showError("Please enter your email and password.");
+    if (!loginValue || !password) {
+        showError("Please enter your phone number and password.");
         return;
     }
 
     if (configured && auth) {
         try {
-            await signInWithEmailAndPassword(auth, email, password);
+            const emailForLogin = loginValue.includes("@") ? loginValue : await resolveLoginEmailFromPhone(phone);
+            if (!emailForLogin) {
+                throw new Error("No account matched that phone number.");
+            }
+            const result = await signInWithEmailAndPassword(auth, emailForLogin, password);
+            setCurrentUser({
+                id: result.user.uid,
+                uid: result.user.uid,
+                email: result.user.email,
+                displayName: result.user.displayName || "",
+                phone,
+                about: "Available"
+            });
             window.location.href = "chats.html";
         } catch (error) {
             showError(error);
@@ -239,9 +281,13 @@ async function handleLogin(event) {
     }
 
     const state = readState();
-    const account = state.accounts.find((entry) => entry.email.toLowerCase() === email.toLowerCase() && entry.password === password);
+    const account = state.accounts.find((entry) => {
+        const matchesPhone = entry.phone && normalizePhone(entry.phone) === loginIdentifier;
+        const matchesEmail = entry.email && entry.email.toLowerCase() === loginIdentifier.toLowerCase();
+        return (matchesPhone || matchesEmail) && entry.password === password;
+    });
     if (!account) {
-        showError("No account matched those details. Try demo@example.com / demo123.");
+        showError("No account matched those details. Try +2348000000000 / demo123.");
         return;
     }
     setCurrentUser(account);
