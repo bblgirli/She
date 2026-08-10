@@ -1,41 +1,31 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {
-    createUserWithEmailAndPassword,
-    GoogleAuthProvider,
-    getAuth,
-    onAuthStateChanged,
-    sendPasswordResetEmail,
-    signInWithEmailAndPassword,
-    signInWithPopup,
-    signOut,
-    updateProfile
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import {
-    addDoc,
-    collection,
-    doc,
-    getDocs,
-    getFirestore,
-    onSnapshot,
-    orderBy,
-    query,
-    serverTimestamp,
-    setDoc,
-    where
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
 const STORAGE_KEY = "she_app_state";
 const CURRENT_USER_KEY = "she_current_user";
-const configured = Boolean(firebaseConfig && firebaseConfig.apiKey && firebaseConfig.projectId);
+let configured = Boolean(firebaseConfig && firebaseConfig.apiKey && firebaseConfig.projectId);
 let firebaseApp = null;
 let auth = null;
 let db = null;
+let firebaseAuthModule = null;
+let firebaseFirestoreModule = null;
 
-if (configured) {
-    firebaseApp = initializeApp(firebaseConfig);
-    auth = getAuth(firebaseApp);
-    db = getFirestore(firebaseApp);
+async function initializeFirebase() {
+    if (!configured || auth || db) return;
+
+    try {
+        const appModule = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
+        const authModule = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
+        const firestoreModule = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+
+        firebaseAuthModule = authModule;
+        firebaseFirestoreModule = firestoreModule;
+        firebaseApp = appModule.initializeApp(firebaseConfig);
+        auth = authModule.getAuth(firebaseApp);
+        db = firestoreModule.getFirestore(firebaseApp);
+    } catch (error) {
+        console.warn("Firebase unavailable; falling back to local mode.", error);
+        configured = false;
+    }
 }
 
 function readState() {
@@ -174,15 +164,16 @@ function renderLocalMessages() {
 }
 
 async function saveUserProfile(user, data = {}) {
+    await initializeFirebase();
     const phone = normalizePhone(data.phone || "");
-    if (configured && db && auth) {
-        await setDoc(doc(db, "users", user.uid), {
+    if (configured && db && auth && firebaseFirestoreModule) {
+        await firebaseFirestoreModule.setDoc(firebaseFirestoreModule.doc(db, "users", user.uid), {
             uid: user.uid,
             email: user.email,
             displayName: data.displayName || user.displayName || "",
             phone,
             about: data.about || "Available",
-            updatedAt: serverTimestamp()
+            updatedAt: firebaseFirestoreModule.serverTimestamp()
         }, { merge: true });
         return;
     }
@@ -201,6 +192,7 @@ async function saveUserProfile(user, data = {}) {
 
 async function handleSignup(event) {
     event.preventDefault();
+    await initializeFirebase();
     ensureAccountSeed();
     const name = document.getElementById("name").value.trim();
     const email = document.getElementById("email").value.trim();
@@ -212,10 +204,10 @@ async function handleSignup(event) {
         return;
     }
 
-    if (configured && auth) {
+    if (configured && auth && firebaseAuthModule) {
         try {
-            const result = await createUserWithEmailAndPassword(auth, email, password);
-            await updateProfile(result.user, { displayName: name });
+            const result = await firebaseAuthModule.createUserWithEmailAndPassword(auth, email, password);
+            await firebaseAuthModule.updateProfile(result.user, { displayName: name });
             await saveUserProfile(result.user, { displayName: name, phone });
             window.location.href = "chats.html";
         } catch (error) {
@@ -246,6 +238,7 @@ async function handleSignup(event) {
 
 async function handleLogin(event) {
     event.preventDefault();
+    await initializeFirebase();
     ensureAccountSeed();
     const loginValue = document.getElementById("loginPhone").value.trim();
     const password = document.getElementById("loginPassword").value;
@@ -258,13 +251,13 @@ async function handleLogin(event) {
         return;
     }
 
-    if (configured && auth) {
+    if (configured && auth && firebaseAuthModule) {
         try {
             const emailForLogin = loginValue.includes("@") ? loginValue : await resolveLoginEmailFromPhone(phone);
             if (!emailForLogin) {
                 throw new Error("No account matched that phone number.");
             }
-            const result = await signInWithEmailAndPassword(auth, emailForLogin, password);
+            const result = await firebaseAuthModule.signInWithEmailAndPassword(auth, emailForLogin, password);
             setCurrentUser({
                 id: result.user.uid,
                 uid: result.user.uid,
@@ -307,16 +300,16 @@ async function sendMessage() {
     const text = input.value.trim();
     if (!text) return;
 
-    if (configured && db && auth) {
+    if (configured && db && auth && firebaseFirestoreModule) {
         try {
-            await setDoc(doc(db, "conversations", conversationKey()), {
+            await firebaseFirestoreModule.setDoc(firebaseFirestoreModule.doc(db, "conversations", conversationKey()), {
                 participants: [auth.currentUser.uid, localStorage.getItem("currentChatUid") || ""].filter(Boolean),
-                updatedAt: serverTimestamp()
+                updatedAt: firebaseFirestoreModule.serverTimestamp()
             }, { merge: true });
-            await addDoc(collection(db, "conversations", conversationKey(), "messages"), {
+            await firebaseFirestoreModule.addDoc(firebaseFirestoreModule.collection(db, "conversations", conversationKey(), "messages"), {
                 text,
                 senderId: auth.currentUser.uid,
-                createdAt: serverTimestamp()
+                createdAt: firebaseFirestoreModule.serverTimestamp()
             });
             input.value = "";
         } catch (error) {
@@ -364,8 +357,8 @@ function goBack() { window.location.href = "chats.html"; }
 function showEmoji() { const input = document.getElementById("messageInput"); if (input) { input.value += "😊"; input.focus(); } }
 function logout() {
     if (confirm("Are you sure you want to log out?")) {
-        if (configured && auth) {
-            signOut(auth).then(() => {
+        if (configured && auth && firebaseAuthModule) {
+            firebaseAuthModule.signOut(auth).then(() => {
                 localStorage.removeItem(CURRENT_USER_KEY);
                 window.location.href = "login.html";
             }).catch(showError);
@@ -378,15 +371,15 @@ function logout() {
 function forgotPassword() {
     const email = prompt("Enter your email address:");
     if (!email) return;
-    if (configured && auth) {
-        sendPasswordResetEmail(auth, email).then(() => alert("Password reset email sent.")).catch(showError);
+    if (configured && auth && firebaseAuthModule) {
+        firebaseAuthModule.sendPasswordResetEmail(auth, email).then(() => alert("Password reset email sent.")).catch(showError);
         return;
     }
     alert("Password reset is available once Firebase Auth is configured.");
 }
 function googleLogin() {
-    if (configured && auth) {
-        signInWithPopup(auth, new GoogleAuthProvider()).then(() => window.location.href = "chats.html").catch(showError);
+    if (configured && auth && firebaseAuthModule) {
+        firebaseAuthModule.signInWithPopup(auth, new firebaseAuthModule.GoogleAuthProvider()).then(() => window.location.href = "chats.html").catch(showError);
         return;
     }
     alert("Google sign-in will work once Firebase Auth is configured.");
@@ -421,11 +414,12 @@ function viewStatus(name) { alert(`Status from ${name} is not available yet.`); 
 
 async function saveProfile() {
     try {
+        await initializeFirebase();
         const displayName = document.getElementById("editName").value.trim();
         const about = document.getElementById("editAbout").value.trim();
         if (!displayName) throw new Error("Please enter your name.");
-        if (configured && auth) {
-            await updateProfile(auth.currentUser, { displayName });
+        if (configured && auth && firebaseAuthModule) {
+            await firebaseAuthModule.updateProfile(auth.currentUser, { displayName });
         }
         await saveUserProfile(getCurrentUser(), { displayName, about });
         window.location.href = "profile.html";
@@ -508,7 +502,8 @@ function hydrateChatPage() {
     renderLocalMessages();
 }
 
-function initializeApp() {
+async function initializeApp() {
+    await initializeFirebase();
     if (!configured) {
         ensureAccountSeed();
     }
@@ -538,6 +533,6 @@ function initializeApp() {
     }
 }
 
-initializeApp();
+initializeApp().catch(showError);
 
 Object.assign(window, { sendMessage, togglePassword, toggleLoginPassword, handleEnter, openChat, goBack, showEmoji, logout, forgotPassword, googleLogin, editProfileName, saveProfile, goTo, searchChats, searchContacts, searchCalls, openMenu, newChat, createGroup, createContact, startCall, startVideoCall, attachFile, openCamera, sendVoiceMessage, changeProfilePhoto, editAbout, addParticipant, leaveGroup, openPrivacy, openSecurity, openChatSettings, openNotifications, openStorage, openHelp, toggleDarkMode, addStatus, viewStatus });
