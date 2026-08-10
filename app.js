@@ -1,613 +1,168 @@
-/* =========================
-   SIGN UP
-========================= */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+    createUserWithEmailAndPassword,
+    GoogleAuthProvider,
+    getAuth,
+    onAuthStateChanged,
+    sendPasswordResetEmail,
+    signInWithEmailAndPassword,
+    signInWithPopup,
+    signOut,
+    updateProfile
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {
+    addDoc,
+    collection,
+    doc,
+    getFirestore,
+    onSnapshot,
+    orderBy,
+    query,
+    serverTimestamp,
+    setDoc
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { firebaseConfig } from "./firebase-config.js";
+
+const configured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
+const firebaseApp = configured ? initializeApp(firebaseConfig) : null;
+const auth = firebaseApp ? getAuth(firebaseApp) : null;
+const db = firebaseApp ? getFirestore(firebaseApp) : null;
+
+function requireFirebase() {
+    if (!configured) throw new Error("Firebase is not configured. Add the values in firebase-config.js.");
+}
+
+function showError(error) { alert(error?.message || error); }
+
+function conversationId() {
+    const contactId = localStorage.getItem("currentChatUid") || `contact-${localStorage.getItem("currentChat") || "unknown"}`;
+    return [auth.currentUser.uid, contactId].sort().join("_").replace(/[^a-zA-Z0-9_-]/g, "-");
+}
+
+async function saveUserProfile(user, data = {}) {
+    await setDoc(doc(db, "users", user.uid), {
+        uid: user.uid,
+        email: user.email,
+        displayName: data.displayName || user.displayName || "",
+        phone: data.phone || "",
+        about: data.about || "Available",
+        updatedAt: serverTimestamp()
+    }, { merge: true });
+}
 
 const signupForm = document.getElementById("signupForm");
-
 if (signupForm) {
-
-    signupForm.addEventListener("submit", function(event) {
-
+    signupForm.addEventListener("submit", async (event) => {
         event.preventDefault();
-
-        const name = document.getElementById("name").value;
-        const phone = document.getElementById("phone").value;
-
-        if (!name || !phone) {
-            alert("Please enter your name and phone number.");
-            return;
-        }
-
-        /*
-         * Temporary storage.
-         * Later we will replace this with Firebase Authentication.
-         */
-
-        localStorage.setItem("userName", name);
-        localStorage.setItem("userPhone", phone);
-
-        alert("Account created successfully!");
-
-        window.location.href = "chats.html";
-
+        try {
+            requireFirebase();
+            const result = await createUserWithEmailAndPassword(auth, document.getElementById("email").value.trim(), document.getElementById("password").value);
+            const name = document.getElementById("name").value.trim();
+            const phone = `${document.getElementById("countryCode").value}${document.getElementById("phone").value.trim()}`;
+            await updateProfile(result.user, { displayName: name });
+            await saveUserProfile(result.user, { displayName: name, phone });
+            window.location.href = "chats.html";
+        } catch (error) { showError(error); }
     });
-
 }
-
-
-/* =========================
-   PASSWORD
-========================= */
-
-function togglePassword() {
-
-    const password = document.getElementById("password");
-
-    if (!password) return;
-
-    if (password.type === "password") {
-        password.type = "text";
-    } else {
-        password.type = "password";
-    }
-
-}
-
-
-/* =========================
-   OPEN CHAT
-========================= */
-
-function openChat(name) {
-
-    localStorage.setItem("currentChat", name);
-
-    window.location.href = "chat.html";
-
-}
-
-
-/* =========================
-   GO BACK
-========================= */
-
-function goBack() {
-
-    window.location.href = "chats.html";
-
-}
-
-
-/* =========================
-   SEND MESSAGE
-========================= */
-
-function sendMessage() {
-
-    const input = document.getElementById("messageInput");
-    const messages = document.getElementById("messages");
-
-    if (!input || !messages) return;
-
-    const text = input.value.trim();
-
-    if (text === "") return;
-
-
-    const message = document.createElement("div");
-
-    message.className = "message sent";
-
-    message.innerHTML = `
-        <p>${escapeHTML(text)}</p>
-        <span>Now ✓✓</span>
-    `;
-
-    messages.appendChild(message);
-
-    input.value = "";
-
-    messages.scrollTop = messages.scrollHeight;
-
-}
-
-
-/* =========================
-   ENTER TO SEND
-========================= */
-
-function handleEnter(event) {
-
-    if (event.key === "Enter") {
-
-        event.preventDefault();
-
-        sendMessage();
-
-    }
-
-}
-
-
-/* =========================
-   SECURITY
-========================= */
-
-function escapeHTML(text) {
-
-    const div = document.createElement("div");
-
-    div.textContent = text;
-
-    return div.innerHTML;
-
-}
-
-
-/* =========================
-   SEARCH
-========================= */
-
-function searchChats() {
-
-    const search = prompt("Search chats:");
-
-    if (search) {
-        alert("Searching for: " + search);
-    }
-
-}
-
-
-/* =========================
-   MENU
-========================= */
-
-function openMenu() {
-
-    alert(
-        "Menu\n\n" +
-        "New group\n" +
-        "Settings\n" +
-        "Profile"
-    );
-
-}
-
-
-/* =========================
-   NEW CHAT
-========================= */
-
-function newChat() {
-
-    alert("New chat screen coming next.");
-
-}
-
-
-/* =========================
-   EMOJI
-========================= */
-
-function showEmoji() {
-
-    const input = document.getElementById("messageInput");
-
-    if (!input) return;
-
-    input.value += "😊";
-
-    input.focus();
-
-}
-
-
-/* =========================
-   ATTACHMENT
-========================= */
-
-function attachFile() {
-
-    alert("File attachment coming next.");
-
-}
-
-
-/* =========================
-   CAMERA
-========================= */
-
-function openCamera() {
-
-    alert("Camera coming next.");
-
-}
-
-
-/* =========================
-   VOICE MESSAGE
-========================= */
-
-function sendVoiceMessage() {
-
-    alert("Voice recording will be connected later.");
-
-}
-
-
-/* =========================
-   VOICE CALL
-========================= */
-
-function startCall() {
-
-    alert("Voice call feature coming next.");
-
-}
-
-
-/* =========================
-   VIDEO CALL
-========================= */
-
-function startVideoCall() {
-
-    alert("Video call feature coming next.");
-
-}
-
-function goTo(page) {
-    window.location.href = page;
-}
-
-function searchContacts() {
-
-    const search = prompt("Search contacts:");
-
-    if (search) {
-        alert("Searching contacts for: " + search);
-    }
-
-}
-/* =========================
-   PROFILE
-========================= */
-
-function changeProfilePhoto() {
-    alert("Profile photo selection will be connected to Firebase Storage.");
-}
-
-function editProfileName() {
-
-    const oldName =
-        document.getElementById("displayName").textContent;
-
-    const newName = prompt("Enter your name:", oldName);
-
-    if (newName && newName.trim() !== "") {
-
-        document.getElementById("displayName").textContent =
-            newName;
-
-        document.getElementById("profileName").textContent =
-            newName;
-
-        localStorage.setItem("userName", newName);
-    }
-}
-
-
-function editAbout() {
-
-    const oldAbout =
-        document.getElementById("profileAbout").textContent;
-
-    const about = prompt("Enter your About:", oldAbout);
-
-    if (about && about.trim() !== "") {
-
-        document.getElementById("profileAbout").textContent =
-            about;
-
-    }
-}
-
-
-/* =========================
-   SETTINGS
-========================= */
-
-function openPrivacy() {
-    alert("Privacy settings coming next.");
-}
-
-function openSecurity() {
-    alert("Security settings coming next.");
-}
-
-function openChatSettings() {
-    alert("Chat settings coming next.");
-}
-
-function openNotifications() {
-    alert("Notification settings coming next.");
-}
-
-function openStorage() {
-    alert("Storage and data settings coming next.");
-}
-
-function openHelp() {
-    alert("Help center coming next.");
-}
-
-function toggleDarkMode() {
-
-    document.body.classList.toggle("dark-mode");
-
-    localStorage.setItem(
-        "darkMode",
-        document.body.classList.contains("dark-mode")
-    );
-}
-
-
-function logout() {
-
-    const confirmLogout =
-        confirm("Are you sure you want to log out?");
-
-    if (confirmLogout) {
-
-        localStorage.clear();
-
-        window.location.href = "signup.html";
-
-    }
-}
-
-
-/* =========================
-   NEW CONTACT
-========================= */
-
-function createContact() {
-
-    const name = prompt("Enter contact name:");
-
-    if (!name) return;
-
-    const phone = prompt("Enter phone number:");
-
-    if (!phone) return;
-
-    alert(
-        name +
-        " has been added to your contacts."
-    );
-
-}
-
-
-/* =========================
-   NEW GROUP
-========================= */
-
-function chooseGroupPhoto() {
-
-    alert("Group photo selection will be connected later.");
-
-}
-
-
-function createGroupNow() {
-
-    const groupName =
-        document.getElementById("groupName").value.trim();
-
-    const selected =
-        document.querySelectorAll(
-            '.participant input[type="checkbox"]:checked'
-        );
-
-    if (!groupName) {
-
-        alert("Please enter a group name.");
-
-        return;
-
-    }
-
-    if (selected.length === 0) {
-
-        alert("Select at least one participant.");
-
-        return;
-
-    }
-
-    alert(
-        "Group '" +
-        groupName +
-        "' created with " +
-        selected.length +
-        " participant(s)."
-    );
-
-}
-
-
-function addParticipant() {
-
-    alert("Add participant screen coming next.");
-
-}
-
-
-function leaveGroup() {
-
-    const confirmLeave =
-        confirm("Are you sure you want to exit this group?");
-
-    if (confirmLeave) {
-
-        alert("You have left the group.");
-
-        window.location.href = "chats.html";
-
-    }
-}
-
-function searchCalls() {
-
-    const search = prompt("Search calls:");
-
-    if (search) {
-        alert("Searching calls for: " + search);
-    }
-
-}
-
-
-function createGroup() {
-
-    alert("Group creation screen coming next.");
-
-}
-
-
-function addStatus() {
-
-    alert("Choose a photo or video to post as your status.");
-
-}
-
-
-function viewStatus(name) {
-
-    alert("Opening " + name + "'s status.");
-
-}
-/* =========================
-   LOGIN
-========================= */
 
 const loginForm = document.getElementById("loginForm");
-
 if (loginForm) {
-
-    loginForm.addEventListener("submit", function(event) {
-
+    loginForm.addEventListener("submit", async (event) => {
         event.preventDefault();
-
-        const phone =
-            document.getElementById("loginPhone").value;
-
-        const password =
-            document.getElementById("loginPassword").value;
-
-        if (!phone || !password) {
-
-            alert("Please enter your phone number and password.");
-
-            return;
-        }
-
-        /*
-         * Temporary login.
-         * Firebase Authentication will replace this later.
-         */
-
-        localStorage.setItem("loggedIn", "true");
-
-        window.location.href = "chats.html";
-
+        try {
+            requireFirebase();
+            await signInWithEmailAndPassword(auth, document.getElementById("loginPhone").value.trim(), document.getElementById("loginPassword").value);
+            window.location.href = "chats.html";
+        } catch (error) { showError(error); }
     });
-
 }
 
+if (auth) onAuthStateChanged(auth, async (user) => {
+    if (!user) return;
+    if (db) await saveUserProfile(user);
+    const messages = document.getElementById("messages");
+    if (!messages) return;
+    const messagesQuery = query(collection(db, "conversations", conversationId(), "messages"), orderBy("createdAt", "asc"));
+    onSnapshot(messagesQuery, (snapshot) => {
+        messages.querySelectorAll(".firebase-message").forEach((message) => message.remove());
+        snapshot.forEach((messageSnapshot) => {
+            const message = messageSnapshot.data();
+            const item = document.createElement("div");
+            item.className = `message firebase-message ${message.senderId === user.uid ? "sent" : "received"}`;
+            item.innerHTML = `<p>${escapeHTML(message.text)}</p><span>${formatTime(message.createdAt)}</span>`;
+            messages.appendChild(item);
+        });
+        messages.scrollTop = messages.scrollHeight;
+    }, showError);
+});
 
-function toggleLoginPassword() {
-
-    const password =
-        document.getElementById("loginPassword");
-
-    if (!password) return;
-
-    if (password.type === "password") {
-
-        password.type = "text";
-
-    } else {
-
-        password.type = "password";
-
-    }
-
+async function sendMessage() {
+    const input = document.getElementById("messageInput");
+    if (!input || !input.value.trim()) return;
+    try {
+        requireFirebase();
+        if (!auth.currentUser) throw new Error("Please log in before sending a message.");
+        await setDoc(doc(db, "conversations", conversationId()), {
+            participants: [auth.currentUser.uid, localStorage.getItem("currentChatUid") || ""].filter(Boolean),
+            updatedAt: serverTimestamp()
+        }, { merge: true });
+        await addDoc(collection(db, "conversations", conversationId(), "messages"), {
+            text: input.value.trim(), senderId: auth.currentUser.uid, createdAt: serverTimestamp()
+        });
+        input.value = "";
+    } catch (error) { showError(error); }
 }
 
+function formatTime(timestamp) { return timestamp?.toDate ? timestamp.toDate().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "Sending..."; }
+function escapeHTML(text) { const div = document.createElement("div"); div.textContent = text; return div.innerHTML; }
+function togglePassword(id = "password") { const input = document.getElementById(id); if (input) input.type = input.type === "password" ? "text" : "password"; }
+function toggleLoginPassword() { togglePassword("loginPassword"); }
+function handleEnter(event) { if (event.key === "Enter") { event.preventDefault(); sendMessage(); } }
+function openChat(name, uid = "") { localStorage.setItem("currentChat", name); if (uid) localStorage.setItem("currentChatUid", uid); window.location.href = "chat.html"; }
+function goBack() { window.location.href = "chats.html"; }
+function showEmoji() { const input = document.getElementById("messageInput"); if (input) { input.value += "😊"; input.focus(); } }
+function logout() { if (confirm("Are you sure you want to log out?")) signOut(auth).then(() => { localStorage.clear(); window.location.href = "login.html"; }).catch(showError); }
+function forgotPassword() { const email = prompt("Enter your email address:"); if (email) sendPasswordResetEmail(auth, email).then(() => alert("Password reset email sent.")).catch(showError); }
+function googleLogin() { try { requireFirebase(); signInWithPopup(auth, new GoogleAuthProvider()).then(() => window.location.href = "chats.html").catch(showError); } catch (error) { showError(error); } }
+function editProfileName() { window.location.href = "edit-profile.html"; }
+function goTo(page) { window.location.href = page; }
+function searchChats() { const value = prompt("Search chats:"); if (value) alert(`Searching for: ${value}`); }
+function searchContacts() { const value = prompt("Search contacts:"); if (value) alert(`Searching for: ${value}`); }
+function searchCalls() { const value = prompt("Search calls:"); if (value) alert(`Searching for: ${value}`); }
+function openMenu() { alert("Menu\n\nNew group\nSettings\nProfile"); }
+function newChat() { window.location.href = "new-chat.html"; }
+function createGroup() { window.location.href = "new-group.html"; }
+function createContact() { alert("Invite a registered Firebase user by sharing their email address."); }
+function startCall() { alert("Voice calls require a WebRTC service and are not enabled yet."); }
+function startVideoCall() { alert("Video calls require a WebRTC service and are not enabled yet."); }
+function attachFile() { alert("File uploads require Firebase Storage setup."); }
+function openCamera() { alert("Camera access is not enabled yet."); }
+function sendVoiceMessage() { alert("Voice messages are not enabled yet."); }
+function changeProfilePhoto() { alert("Profile photos require Firebase Storage setup."); }
+function editAbout() { window.location.href = "edit-profile.html"; }
+function addParticipant() { alert("Add a registered Firebase user to this group."); }
+function leaveGroup() { if (confirm("Are you sure you want to exit this group?")) goBack(); }
+function openPrivacy() { alert("Privacy settings are managed through your Firebase account."); }
+function openSecurity() { alert("Use Forgot password on the login screen to reset credentials."); }
+function openChatSettings() { alert("Chat settings are not enabled yet."); }
+function openNotifications() { alert("Notifications are not enabled yet."); }
+function openStorage() { alert("Storage settings are not enabled yet."); }
+function openHelp() { alert("Please check the Firebase setup instructions in README.md."); }
+function toggleDarkMode() { document.body.classList.toggle("dark-mode"); localStorage.setItem("darkMode", document.body.classList.contains("dark-mode")); }
+function addStatus() { alert("Status posts are not enabled yet."); }
+function viewStatus(name) { alert(`Status from ${name} is not available yet.`); }
 
-function forgotPassword() {
-
-    const phone =
-        prompt("Enter your phone number:");
-
-    if (!phone) return;
-
-    alert(
-        "A password reset process will be sent to " +
-        phone
-    );
-
+async function saveProfile() {
+    try {
+        requireFirebase();
+        const displayName = document.getElementById("editName").value.trim();
+        const about = document.getElementById("editAbout").value.trim();
+        if (!displayName) throw new Error("Please enter your name.");
+        await updateProfile(auth.currentUser, { displayName });
+        await saveUserProfile(auth.currentUser, { displayName, about });
+        window.location.href = "profile.html";
+    } catch (error) { showError(error); }
 }
 
-
-function googleLogin() {
-
-    alert(
-        "Google authentication will be connected with Firebase."
-    );
-
-}
-/* =========================
-   EDIT PROFILE
-========================= */
-
-function saveProfile() {
-
-    const name =
-        document.getElementById("editName").value.trim();
-
-    const about =
-        document.getElementById("editAbout").value.trim();
-
-    if (!name) {
-
-        alert("Please enter your name.");
-
-        return;
-    }
-
-    localStorage.setItem("userName", name);
-    localStorage.setItem("userAbout", about);
-
-    alert("Profile updated successfully!");
-
-    window.location.href = "profile.html";
-}
-
-
-/* Load About */
-
-const savedAbout =
-    localStorage.getItem("userAbout");
-
-const editAboutInput =
-    document.getElementById("editAbout");
-
-if (editAboutInput && savedAbout) {
-
-    editAboutInput.value = savedAbout;
-
-}
+Object.assign(window, { sendMessage, togglePassword, toggleLoginPassword, handleEnter, openChat, goBack, showEmoji, logout, forgotPassword, googleLogin, editProfileName, saveProfile, goTo, searchChats, searchContacts, searchCalls, openMenu, newChat, createGroup, createContact, startCall, startVideoCall, attachFile, openCamera, sendVoiceMessage, changeProfilePhoto, editAbout, addParticipant, leaveGroup, openPrivacy, openSecurity, openChatSettings, openNotifications, openStorage, openHelp, toggleDarkMode, addStatus, viewStatus });

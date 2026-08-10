@@ -12,7 +12,7 @@
 
     <title>Edit Profile</title>
 
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="style.css">
 
 </head>
 
@@ -156,24 +156,13 @@
 </div>
 
 
-<script src="js/app.js"></script>
+<script type="module" src="app.js"></script>
 
 <script>
 
     /*
      * Load saved profile information
      */
-
-    const savedName =
-        localStorage.getItem("userName");
-
-    if (savedName) {
-
-        document.getElementById("editName").value =
-            savedName;
-
-    }
-
 
 </script>
 
