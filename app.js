@@ -2,7 +2,15 @@ import { firebaseConfig } from "./firebase-config.js";
 
 const STORAGE_KEY = "she_app_state";
 const CURRENT_USER_KEY = "she_current_user";
-let configured = Boolean(firebaseConfig && firebaseConfig.apiKey && firebaseConfig.projectId);
+
+function isFirebaseConfigured() {
+    const apiKey = firebaseConfig?.apiKey || "";
+    const projectId = firebaseConfig?.projectId || "";
+    const hasPlaceholders = /YOUR_|example|changeme/i.test(apiKey) || /YOUR_|example|changeme/i.test(projectId);
+    return Boolean(apiKey && projectId && !hasPlaceholders);
+}
+
+let configured = isFirebaseConfigured();
 let firebaseApp = null;
 let auth = null;
 let db = null;
@@ -47,10 +55,10 @@ function ensureAccountSeed() {
     const state = readState();
     if (!state.accounts.length) {
         state.accounts.push({
-            id: "seed-oluwatosin",
+            id: "seed-local",
             email: "demo@example.com",
             password: "demo123",
-            displayName: "Oluwatosin",
+            displayName: "Demo User",
             phone: "+2348000000000",
             about: "Available"
         });
@@ -224,10 +232,11 @@ async function handleSignup(event) {
             await firebaseAuthModule.updateProfile(result.user, { displayName: name });
             await saveUserProfile(result.user, { displayName: name, phone });
             window.location.href = "chats.html";
+            return;
         } catch (error) {
             showError(error);
+            return;
         }
-        return;
     }
 
     const state = readState();
@@ -281,10 +290,11 @@ async function handleLogin(event) {
                 about: "Available"
             });
             window.location.href = "chats.html";
+            return;
         } catch (error) {
             showError(error);
+            return;
         }
-        return;
     }
 
     const state = readState();
@@ -294,7 +304,7 @@ async function handleLogin(event) {
         return (matchesPhone || matchesEmail) && entry.password === password;
     });
     if (!account) {
-        showError("No account matched those details. Try +2348000000000 / demo123.");
+        showError("No account matched those details. Try demo@example.com / demo123 or create your own account.");
         return;
     }
     setCurrentUser(account);
@@ -330,10 +340,11 @@ async function sendMessage() {
                 createdAt: firebaseFirestoreModule.serverTimestamp()
             });
             input.value = "";
+            return;
         } catch (error) {
             showError(error);
+            return;
         }
-        return;
     }
 
     const key = conversationKey();
