@@ -50,6 +50,7 @@ async function initializeFirebase() {
             }
         });
 
+        await handleEmailLinkSignIn();
         const redirectResult = await firebaseAuthModule.getRedirectResult(auth);
         if (redirectResult?.user) {
             const signedInUser = getFirebaseUserData(redirectResult.user);
@@ -167,6 +168,65 @@ function getFirebaseUserData(user) {
     };
 }
 
+function getDeviceId() {
+    let id = localStorage.getItem("she_device_id");
+    if (!id) {
+        id = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `device-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        localStorage.setItem("she_device_id", id);
+    }
+    return id;
+}
+
+function isCurrentDeviceKnown(email) {
+    if (!email) return false;
+    try {
+        const known = JSON.parse(localStorage.getItem("she_known_devices") || "{}");
+        return Boolean(known[email.toLowerCase()]);
+    } catch (error) {
+        return false;
+    }
+}
+
+function markDeviceKnown(email) {
+    if (!email) return;
+    try {
+        const known = JSON.parse(localStorage.getItem("she_known_devices") || "{}");
+        known[email.toLowerCase()] = getDeviceId();
+        localStorage.setItem("she_known_devices", JSON.stringify(known));
+    } catch (error) {
+        localStorage.setItem("she_known_devices", JSON.stringify({ [email.toLowerCase()]: getDeviceId() }));
+    }
+}
+
+async function handleEmailLinkSignIn() {
+    if (!configured || !auth || !firebaseAuthModule) return false;
+    const currentUrl = window.location.href;
+    if (!firebaseAuthModule.isSignInWithEmailLink(auth, currentUrl)) return false;
+    let email = localStorage.getItem("she_sign_in_email");
+    if (!email && document.getElementById("loginEmail")) {
+        email = document.getElementById("loginEmail").value.trim().toLowerCase();
+    }
+    if (!email) {
+        email = prompt("Enter the email address you used to sign in:");
+    }
+    if (!email) return false;
+
+    try {
+        const result = await firebaseAuthModule.signInWithEmailLink(auth, email, currentUrl);
+        markDeviceKnown(email);
+        const signedInUser = getFirebaseUserData(result.user);
+        setCurrentUser(signedInUser);
+        localStorage.removeItem("she_sign_in_email");
+        if (isAuthPage()) {
+            redirectToChats();
+        }
+        return true;
+    } catch (error) {
+        showError(error);
+        return false;
+    }
+}
+
 function redirectToChats() {
     const target = new URL("chats.html", window.location.href);
     window.location.replace(target.toString());
@@ -182,6 +242,10 @@ function handleFirebaseAuthState(user) {
         const authUser = getFirebaseUserData(user);
         setCurrentUser(authUser);
         loadUserProfile(user).catch(() => {});
+        if (!user.emailVerified && !isVerifyEmailPage() && !window.location.pathname.endsWith("verify-email.html")) {
+            redirectToVerifyEmail();
+            return;
+        }
         if (isAuthPage()) {
             redirectToChats();
         }
@@ -193,9 +257,18 @@ function handleFirebaseAuthState(user) {
     }
 }
 
+function isVerifyEmailPage() {
+    return window.location.pathname.split("/").pop() === "verify-email.html";
+}
+
+function redirectToVerifyEmail() {
+    const target = new URL("verify-email.html", window.location.href);
+    window.location.replace(target.toString());
+}
+
 function isAuthPage() {
     const path = window.location.pathname.split("/").pop() || "";
-    return path === "login.html" || path === "signup.html";
+    return ["login.html", "signup.html", "forgot-password.html", "verify-email.html", "reset-password.html"].includes(path);
 }
 
 function requireAuth() {
@@ -215,48 +288,102 @@ function waitForAuthState() {
 }
 
 function forgotPassword() {
-    const identifier = prompt("Enter your email address:");
-    if (!identifier) return;
+    window.location.href = "forgot-password.html";
+}
 
-    if (configured && auth && firebaseAuthModule) {
-        const email = identifier.includes("@") ? identifier : null;
-        if (!email) {
-            alert("Forgot password via phone is only supported when Firebase is configured with phone-based auth. Please enter your email to receive a reset link.");
-            return;
+async function handleForgotPasswordForm(event) {
+    event.preventDefault();
+    if (!configured || !auth || !firebaseAuthModule) {
+        showError("Firebase forgot-password is unavailable.");
+        return;
+    }
+    const email = document.getElementById("forgotEmail")?.value.trim().toLowerCase();
+    if (!email) {
+        showError("Please enter your email address.");
+        return;
+    }
+    try {
+        const actionCodeSettings = {
+            url: `${window.location.origin}/reset-password.html`,
+            handleCodeInApp: true
+        };
+        await firebaseAuthModule.sendPasswordResetEmail(auth, email, actionCodeSettings);
+        const status = document.getElementById("forgotStatus");
+        if (status) {
+            status.textContent = "A password reset email has been sent. Follow the link in your inbox to finish resetting your password.";
         }
-        firebaseAuthModule.sendPasswordResetEmail(auth, email)
-            .then(() => alert("Password reset email sent."))
-            .catch(showError);
+    } catch (error) {
+        showError(error);
+    }
+}
+
+function initializeVerifyEmailPage() {
+    const checkButton = document.getElementById("checkVerification");
+    const resendLink = document.getElementById("resendVerifyLink");
+    if (checkButton) {
+        checkButton.addEventListener("click", async () => {
+            if (!configured || !auth || !firebaseAuthModule) {
+                showError("Firebase is unavailable.");
+                return;
+            }
+            await auth.currentUser?.reload();
+            if (auth.currentUser?.emailVerified) {
+                redirectToChats();
+                return;
+            }
+            const status = document.getElementById("verifyStatus");
+            if (status) {
+                status.textContent = "Email not verified yet. Check your inbox and click the verification link.";
+            }
+        });
+    }
+    if (resendLink) {
+        resendLink.addEventListener("click", async (event) => {
+            event.preventDefault();
+            if (!configured || !auth || !firebaseAuthModule || !auth.currentUser) {
+                showError("Firebase is unavailable.");
+                return;
+            }
+            try {
+                await firebaseAuthModule.sendEmailVerification(auth.currentUser);
+                const status = document.getElementById("verifyStatus");
+                if (status) {
+                    status.textContent = "Verification email resent. Check your inbox.";
+                }
+            } catch (error) {
+                showError(error);
+            }
+        });
+    }
+}
+
+async function handleResetPasswordForm(event) {
+    event.preventDefault();
+    if (!configured || !auth || !firebaseAuthModule) {
+        showError("Firebase reset-password is unavailable.");
         return;
     }
-
-    const state = readState();
-    const normalized = identifier.includes("@") ? identifier.toLowerCase() : normalizePhone(identifier);
-    const account = state.accounts.find((entry) => {
-        const emailMatch = entry.email && entry.email.toLowerCase() === normalized;
-        const phoneMatch = entry.phone && normalizePhone(entry.phone) === normalized;
-        return emailMatch || phoneMatch;
-    });
-
-    if (!account) {
-        alert("No local account found for that email or phone number.");
+    const code = new URLSearchParams(window.location.search).get("oobCode");
+    const password = document.getElementById("newPassword")?.value;
+    const confirmPassword = document.getElementById("confirmPassword")?.value;
+    if (!code) {
+        showError("Invalid or missing password reset code.");
         return;
     }
-
-    const newPassword = prompt("Enter your new password:");
-    if (!newPassword) {
-        alert("Password reset canceled.");
+    if (!password || !confirmPassword) {
+        showError("Please enter and confirm your new password.");
         return;
     }
-    const confirmPassword = prompt("Confirm your new password:");
-    if (newPassword !== confirmPassword) {
-        alert("Passwords do not match. Please try again.");
+    if (password !== confirmPassword) {
+        showError("Passwords do not match.");
         return;
     }
-
-    account.password = newPassword;
-    writeState(state);
-    alert("Password updated successfully. You can now log in with your new password.");
+    try {
+        await firebaseAuthModule.confirmPasswordReset(auth, code, password);
+        window.location.href = "login.html";
+    } catch (error) {
+        showError(error);
+    }
 }
 
 function showError(error) {
@@ -433,7 +560,8 @@ async function handleSignup(event) {
             setCurrentUser(signedInUser);
             await saveUserProfile(result.user, { displayName: name, phone });
             await loadUserProfile(result.user);
-            window.location.href = "chats.html";
+            await firebaseAuthModule.sendEmailVerification(result.user);
+            window.location.href = "verify-email.html";
             return;
         } catch (error) {
             showError(error);
@@ -475,11 +603,30 @@ async function handleLogin(event) {
 
     if (configured && auth && firebaseAuthModule) {
         try {
+            if (!isCurrentDeviceKnown(loginValue)) {
+                const actionCodeSettings = {
+                    url: `${window.location.origin}/login.html`,
+                    handleCodeInApp: true
+                };
+                await firebaseAuthModule.sendSignInLinkToEmail(auth, loginValue, actionCodeSettings);
+                localStorage.setItem("she_sign_in_email", loginValue);
+                const status = document.getElementById("loginStatus");
+                if (status) {
+                    status.textContent = "New device detected. A sign-in link has been sent to your email. Open it from this device to finish logging in.";
+                }
+                return;
+            }
+
             const result = await firebaseAuthModule.signInWithEmailAndPassword(auth, loginValue, password);
             const signedInUser = getFirebaseUserData(result.user);
             setCurrentUser(signedInUser);
+            markDeviceKnown(loginValue);
             await loadUserProfile(result.user);
-            window.location.href = "chats.html";
+            if (!result.user.emailVerified) {
+                redirectToVerifyEmail();
+                return;
+            }
+            redirectToChats();
             return;
         } catch (error) {
             showError(error);
@@ -488,13 +635,7 @@ async function handleLogin(event) {
     }
 
     const state = readState();
-    const account = state.accounts.find((entry) => {
-        const matchesEmail = entry.email && entry.email.toLowerCase() === loginValue;
-        if (!matchesEmail) return false;
-        if (entry.provider === "google") return true;
-        return entry.password === password;
-    });
-
+    const account = state.accounts.find((entry) => entry.email.toLowerCase() === loginValue && entry.password === password);
     if (account) {
         setCurrentUser(account);
         window.location.href = "chats.html";
@@ -1023,6 +1164,15 @@ async function initializeApp() {
     }
     if (document.getElementById("loginForm")) {
         document.getElementById("loginForm").addEventListener("submit", handleLogin);
+    }
+    if (document.getElementById("forgotPasswordForm")) {
+        document.getElementById("forgotPasswordForm").addEventListener("submit", handleForgotPasswordForm);
+    }
+    if (document.getElementById("verifyEmailForm") || document.getElementById("checkVerification")) {
+        initializeVerifyEmailPage();
+    }
+    if (document.getElementById("resetPasswordForm")) {
+        document.getElementById("resetPasswordForm").addEventListener("submit", handleResetPasswordForm);
     }
 
     updateFirebaseStatus();
