@@ -202,14 +202,6 @@ function handleFirebaseAuthState(user) {
         setCurrentUser(authUser);
         syncUserFirestoreProfile(user).catch(() => {});
 
-        const onVerifyPage = isVerifyEmailPage() || window.location.pathname.endsWith("verify-email.html");
-        if (!user.emailVerified) {
-            if (!onVerifyPage) {
-                redirectToVerifyEmail();
-            }
-            return;
-        }
-
         if (isAuthPage()) {
             redirectToChats();
         }
@@ -221,18 +213,9 @@ function handleFirebaseAuthState(user) {
     }
 }
 
-function isVerifyEmailPage() {
-    return window.location.pathname.split("/").pop() === "verify-email.html";
-}
-
-function redirectToVerifyEmail() {
-    const target = new URL("verify-email.html", window.location.href);
-    window.location.replace(target.toString());
-}
-
 function isAuthPage() {
     const path = window.location.pathname.split("/").pop() || "";
-    return ["login.html", "signup.html", "forgot-password.html", "verify-email.html", "reset-password.html"].includes(path);
+    return ["login.html", "signup.html", "forgot-password.html", "reset-password.html"].includes(path);
 }
 
 function requireAuth() {
@@ -283,74 +266,7 @@ async function handleForgotPasswordForm(event) {
 }
 
 function initializeVerifyEmailPage() {
-    const emailDisplay = document.getElementById("verifyEmailAddress");
-    const verifyStatus = document.getElementById("verifyStatus");
-    const currentEmail = auth?.currentUser?.email || localStorage.getItem("she_verification_email") || "your email";
-    if (emailDisplay) {
-        emailDisplay.textContent = currentEmail;
-    }
-    if (verifyStatus) {
-        verifyStatus.textContent = "A verification link was sent to the address above. Check your inbox or spam folder.";
-    }
-
-    if (configured && auth?.currentUser && !auth.currentUser.emailVerified) {
-        const resendAction = async () => {
-            try {
-                const actionCodeSettings = {
-                    url: `${window.location.origin}/login.html`,
-                    handleCodeInApp: true
-                };
-                await firebaseAuthModule.sendEmailVerification(auth.currentUser, actionCodeSettings);
-                if (verifyStatus) {
-                    verifyStatus.textContent = "A fresh verification email has been sent. Check your inbox and spam folder.";
-                }
-            } catch (error) {
-                showError(error);
-            }
-        };
-        resendAction().catch(() => {});
-    }
-    const checkButton = document.getElementById("checkVerification");
-    const resendLink = document.getElementById("resendVerifyLink");
-    if (checkButton) {
-        checkButton.addEventListener("click", async () => {
-            if (!configured || !auth || !firebaseAuthModule) {
-                showError("Firebase is unavailable.");
-                return;
-            }
-            await auth.currentUser?.reload();
-            if (auth.currentUser?.emailVerified) {
-                redirectToChats();
-                return;
-            }
-            const status = document.getElementById("verifyStatus");
-            if (status) {
-                status.textContent = "Email not verified yet. Check your inbox and click the verification link.";
-            }
-        });
-    }
-    if (resendLink) {
-        resendLink.addEventListener("click", async (event) => {
-            event.preventDefault();
-            if (!configured || !auth || !firebaseAuthModule || !auth.currentUser) {
-                showError("Firebase is unavailable.");
-                return;
-            }
-            try {
-                const actionCodeSettings = {
-                    url: `${window.location.origin}/login.html`,
-                    handleCodeInApp: true
-                };
-                await firebaseAuthModule.sendEmailVerification(auth.currentUser, actionCodeSettings);
-                const status = document.getElementById("verifyStatus");
-                if (status) {
-                    status.textContent = "Verification email resent. Check your inbox.";
-                }
-            } catch (error) {
-                showError(error);
-            }
-        });
-    }
+    return;
 }
 
 async function handleResetPasswordForm(event) {
@@ -389,8 +305,7 @@ function showError(error) {
         || document.getElementById("loginStatus")
         || document.getElementById("signupStatus")
         || document.getElementById("forgotStatus")
-        || document.getElementById("resetStatus")
-        || document.getElementById("verifyStatus");
+        || document.getElementById("resetStatus");
     if (statusElement) {
         statusElement.textContent = message;
         statusElement.classList.add("status-error");
@@ -405,8 +320,7 @@ function showSuccess(message) {
         || document.getElementById("loginStatus")
         || document.getElementById("signupStatus")
         || document.getElementById("forgotStatus")
-        || document.getElementById("resetStatus")
-        || document.getElementById("verifyStatus");
+        || document.getElementById("resetStatus");
     if (statusElement) {
         statusElement.textContent = message;
         statusElement.classList.remove("status-error");
@@ -417,7 +331,7 @@ function showSuccess(message) {
 }
 
 function clearStatus() {
-    ["pageStatus", "loginStatus", "signupStatus", "forgotStatus", "resetStatus", "verifyStatus"].forEach((id) => {
+    ["pageStatus", "loginStatus", "signupStatus", "forgotStatus", "resetStatus"].forEach((id) => {
         const el = document.getElementById(id);
         if (el) {
             el.textContent = "";
@@ -617,13 +531,8 @@ async function handleSignup(event) {
             setCurrentUser(signedInUser);
             await saveUserProfile(result.user, { displayName: name, phone });
             await loadUserProfile(result.user);
-            const actionCodeSettings = {
-                url: `${window.location.origin}/login.html`,
-                handleCodeInApp: true
-            };
-            await firebaseAuthModule.sendEmailVerification(result.user, actionCodeSettings);
             localStorage.setItem("she_verification_email", email);
-            window.location.href = "verify-email.html";
+            window.location.href = "chats.html";
             return;
         } catch (error) {
             showError(error);
@@ -670,10 +579,6 @@ async function handleLogin(event) {
             const signedInUser = getFirebaseUserData(result.user);
             setCurrentUser(signedInUser);
             await loadUserProfile(result.user);
-            if (!result.user.emailVerified) {
-                redirectToVerifyEmail();
-                return;
-            }
             redirectToChats();
             return;
         } catch (error) {
@@ -1230,19 +1135,9 @@ async function initializeApp() {
         ensureAccountSeed();
     }
 
-    if (configured && auth?.currentUser) {
-        const isOnVerifyPage = isVerifyEmailPage() || window.location.pathname.endsWith("verify-email.html");
-        if (!auth.currentUser.emailVerified) {
-            if (!isOnVerifyPage) {
-                redirectToVerifyEmail();
-            }
-            return;
-        }
-
-        if (isAuthPage()) {
-            redirectToChats();
-            return;
-        }
+    if (configured && auth?.currentUser && isAuthPage()) {
+        redirectToChats();
+        return;
     }
 
     if (!requireAuth()) return;
@@ -1255,9 +1150,6 @@ async function initializeApp() {
     }
     if (document.getElementById("forgotPasswordForm")) {
         document.getElementById("forgotPasswordForm").addEventListener("submit", handleForgotPasswordForm);
-    }
-    if (document.getElementById("verifyEmailForm") || document.getElementById("checkVerification")) {
-        initializeVerifyEmailPage();
     }
     if (document.getElementById("resetPasswordForm")) {
         document.getElementById("resetPasswordForm").addEventListener("submit", handleResetPasswordForm);
