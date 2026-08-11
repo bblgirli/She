@@ -318,6 +318,15 @@ async function handleForgotPasswordForm(event) {
 }
 
 function initializeVerifyEmailPage() {
+    const emailDisplay = document.getElementById("verifyEmailAddress");
+    const verifyStatus = document.getElementById("verifyStatus");
+    const currentEmail = auth?.currentUser?.email || localStorage.getItem("she_verification_email") || "your email";
+    if (emailDisplay) {
+        emailDisplay.textContent = currentEmail;
+    }
+    if (verifyStatus) {
+        verifyStatus.textContent = "A verification link was sent to the address above. Check your inbox or spam folder.";
+    }
     const checkButton = document.getElementById("checkVerification");
     const resendLink = document.getElementById("resendVerifyLink");
     if (checkButton) {
@@ -561,6 +570,7 @@ async function handleSignup(event) {
             await saveUserProfile(result.user, { displayName: name, phone });
             await loadUserProfile(result.user);
             await firebaseAuthModule.sendEmailVerification(result.user);
+            localStorage.setItem("she_verification_email", email);
             window.location.href = "verify-email.html";
             return;
         } catch (error) {
