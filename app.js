@@ -50,7 +50,6 @@ async function initializeFirebase() {
             }
         });
 
-        await handleEmailLinkSignIn();
         const redirectResult = await firebaseAuthModule.getRedirectResult(auth);
         if (redirectResult?.user) {
             const signedInUser = getFirebaseUserData(redirectResult.user);
@@ -137,11 +136,14 @@ async function loadUserProfile(user) {
                 id: user.uid,
                 uid: user.uid,
                 email: user.email || "",
-                displayName: profileData.displayName || user.displayName || "",
+                displayName: profileData.name || profileData.displayName || user.displayName || "",
                 phone: profileData.phone || user.phoneNumber || "",
                 about: profileData.about || "Available",
                 username: profileData.username || (user.email ? user.email.split("@")[0] : ""),
-                photoURL: profileData.photoURL || profileData.profilePicture || user.photoURL || "",
+                photoURL: profileData.photoUrl || profileData.photoURL || profileData.profilePicture || user.photoURL || "",
+                online: profileData.online ?? false,
+                createdAt: profileData.createdAt || null,
+                lastSeen: profileData.lastSeen || null,
                 userId: user.uid
             };
             setCurrentUser(mergedUser);
@@ -168,62 +170,19 @@ function getFirebaseUserData(user) {
     };
 }
 
-function getDeviceId() {
-    let id = localStorage.getItem("she_device_id");
-    if (!id) {
-        id = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `device-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        localStorage.setItem("she_device_id", id);
-    }
-    return id;
-}
-
-function isCurrentDeviceKnown(email) {
-    if (!email) return false;
+async function syncUserFirestoreProfile(user) {
+    if (!configured || !db || !auth || !firebaseFirestoreModule || !user) return;
     try {
-        const known = JSON.parse(localStorage.getItem("she_known_devices") || "{}");
-        return Boolean(known[email.toLowerCase()]);
+        await saveUserProfile(user, {
+            displayName: user.displayName || "",
+            phone: user.phoneNumber || "",
+            about: "Available",
+            online: true,
+            lastSeen: firebaseFirestoreModule.serverTimestamp()
+        });
+        await loadUserProfile(user);
     } catch (error) {
-        return false;
-    }
-}
-
-function markDeviceKnown(email) {
-    if (!email) return;
-    try {
-        const known = JSON.parse(localStorage.getItem("she_known_devices") || "{}");
-        known[email.toLowerCase()] = getDeviceId();
-        localStorage.setItem("she_known_devices", JSON.stringify(known));
-    } catch (error) {
-        localStorage.setItem("she_known_devices", JSON.stringify({ [email.toLowerCase()]: getDeviceId() }));
-    }
-}
-
-async function handleEmailLinkSignIn() {
-    if (!configured || !auth || !firebaseAuthModule) return false;
-    const currentUrl = window.location.href;
-    if (!firebaseAuthModule.isSignInWithEmailLink(auth, currentUrl)) return false;
-    let email = localStorage.getItem("she_sign_in_email");
-    if (!email && document.getElementById("loginEmail")) {
-        email = document.getElementById("loginEmail").value.trim().toLowerCase();
-    }
-    if (!email) {
-        email = prompt("Enter the email address you used to sign in:");
-    }
-    if (!email) return false;
-
-    try {
-        const result = await firebaseAuthModule.signInWithEmailLink(auth, email, currentUrl);
-        markDeviceKnown(email);
-        const signedInUser = getFirebaseUserData(result.user);
-        setCurrentUser(signedInUser);
-        localStorage.removeItem("she_sign_in_email");
-        if (isAuthPage()) {
-            redirectToChats();
-        }
-        return true;
-    } catch (error) {
-        showError(error);
-        return false;
+        console.warn("Unable to sync user Firestore profile.", error);
     }
 }
 
@@ -241,7 +200,7 @@ function handleFirebaseAuthState(user) {
     if (user) {
         const authUser = getFirebaseUserData(user);
         setCurrentUser(authUser);
-        loadUserProfile(user).catch(() => {});
+        syncUserFirestoreProfile(user).catch(() => {});
         if (!user.emailVerified && !isVerifyEmailPage() && !window.location.pathname.endsWith("verify-email.html")) {
             redirectToVerifyEmail();
             return;
@@ -553,20 +512,40 @@ async function saveUserProfile(user, data = {}) {
     await initializeFirebase();
     const phone = normalizePhone(data.phone || "");
     const usernameValue = data.username || (data.displayName ? data.displayName.replace(/\s+/g, "").toLowerCase() : user.email ? user.email.split("@")[0] : "");
+    const profileRef = firebaseFirestoreModule ? firebaseFirestoreModule.doc(db, "users", user.uid) : null;
+    let createdAt = null;
+
+    if (configured && db && auth && firebaseFirestoreModule && profileRef) {
+        try {
+            const snapshot = await firebaseFirestoreModule.getDoc(profileRef);
+            if (!snapshot.exists()) {
+                createdAt = firebaseFirestoreModule.serverTimestamp();
+            }
+        } catch (error) {
+            console.warn("Unable to read user profile document before save.", error);
+        }
+    }
+
     const profileData = {
         uid: user.uid,
         userId: user.uid,
         email: user.email,
-        displayName: data.displayName || user.displayName || "",
+        name: data.name || data.displayName || user.displayName || "",
         username: usernameValue,
         phone,
         about: data.about || "Available",
-        photoURL: data.photoURL || user.photoURL || "",
+        photoUrl: data.photoURL || user.photoURL || "",
+        online: data.online !== undefined ? data.online : true,
+        lastSeen: data.lastSeen || (firebaseFirestoreModule ? firebaseFirestoreModule.serverTimestamp() : null),
         updatedAt: firebaseFirestoreModule ? firebaseFirestoreModule.serverTimestamp() : null
     };
 
+    if (createdAt) {
+        profileData.createdAt = createdAt;
+    }
+
     if (configured && db && auth && firebaseFirestoreModule) {
-        await firebaseFirestoreModule.setDoc(firebaseFirestoreModule.doc(db, "users", user.uid), profileData, { merge: true });
+        await firebaseFirestoreModule.setDoc(profileRef, profileData, { merge: true });
         return;
     }
 
@@ -574,11 +553,11 @@ async function saveUserProfile(user, data = {}) {
     const account = state.accounts.find((entry) => entry.email.toLowerCase() === (user.email || "").toLowerCase());
     if (!account) return;
     Object.assign(account, {
-        displayName: profileData.displayName || account.displayName || "",
+        displayName: profileData.name || profileData.displayName || account.displayName || "",
         phone: profileData.phone || account.phone || "",
         about: profileData.about || account.about || "Available",
         username: profileData.username || account.username || "",
-        photoURL: profileData.photoURL || account.photoURL || "",
+        photoURL: profileData.photoUrl || profileData.photoURL || account.photoURL || "",
         userId: profileData.userId || account.userId || account.id
     });
     writeState(state);
@@ -656,24 +635,9 @@ async function handleLogin(event) {
 
     if (configured && auth && firebaseAuthModule) {
         try {
-            if (!isCurrentDeviceKnown(loginValue)) {
-                const actionCodeSettings = {
-                    url: `${window.location.origin}/login.html`,
-                    handleCodeInApp: true
-                };
-                await firebaseAuthModule.sendSignInLinkToEmail(auth, loginValue, actionCodeSettings);
-                localStorage.setItem("she_sign_in_email", loginValue);
-                const status = document.getElementById("loginStatus");
-                if (status) {
-                    status.textContent = "New device detected. A sign-in link has been sent to your email. Open it from this device to finish logging in.";
-                }
-                return;
-            }
-
             const result = await firebaseAuthModule.signInWithEmailAndPassword(auth, loginValue, password);
             const signedInUser = getFirebaseUserData(result.user);
             setCurrentUser(signedInUser);
-            markDeviceKnown(loginValue);
             await loadUserProfile(result.user);
             if (!result.user.emailVerified) {
                 redirectToVerifyEmail();
@@ -965,14 +929,24 @@ async function saveProfile() {
         const displayName = document.getElementById("editName").value.trim();
         const about = document.getElementById("editAbout").value.trim();
         const username = document.getElementById("editUsername")?.value.trim();
+        const photoURL = document.getElementById("editPhotoURL")?.value.trim();
         if (!displayName) throw new Error("Please enter your name.");
         const currentUser = getCurrentUser();
         if (configured && auth && firebaseAuthModule && auth.currentUser) {
-            await firebaseAuthModule.updateProfile(auth.currentUser, { displayName });
-            await saveUserProfile(auth.currentUser, { displayName, about, username, photoURL: currentUser?.photoURL || "" });
+            const profileData = {
+                displayName,
+                about,
+                username,
+                photoURL: photoURL || currentUser?.photoURL || ""
+            };
+            await firebaseAuthModule.updateProfile(auth.currentUser, {
+                displayName,
+                photoURL: profileData.photoURL
+            });
+            await saveUserProfile(auth.currentUser, profileData);
             await loadUserProfile(auth.currentUser);
         } else {
-            await saveUserProfile(currentUser, { displayName, about, username });
+            await saveUserProfile(currentUser, { displayName, about, username, photoURL });
         }
         window.location.href = "profile.html";
     } catch (error) {
@@ -983,19 +957,37 @@ async function saveProfile() {
 function hydrateProfilePage() {
     const user = getCurrentUser();
     if (!user) return;
+    const profilePhoto = document.getElementById("profilePhoto");
     const displayName = document.getElementById("displayName");
     const profileName = document.getElementById("profileName");
+    const profileEmail = document.getElementById("profileEmail");
     const profileUsername = document.getElementById("profileUsername");
     const profileUserId = document.getElementById("profileUserId");
     const profileAbout = document.getElementById("profileAbout");
     const profilePhone = document.querySelector(".profile-phone");
+    const profileMeta = document.getElementById("profileMeta");
 
+    if (profilePhoto) {
+        if (user.photoURL) {
+            profilePhoto.style.backgroundImage = `url(${user.photoURL})`;
+            profilePhoto.textContent = "";
+        } else {
+            profilePhoto.style.backgroundImage = "";
+            profilePhoto.textContent = "👤";
+        }
+    }
     if (displayName) displayName.textContent = user.displayName || "Your Name";
     if (profileName) profileName.textContent = user.displayName || "Your Name";
+    if (profileEmail) profileEmail.textContent = user.email || "";
     if (profileUsername) profileUsername.textContent = user.username || user.email?.split("@")[0] || "username";
     if (profileUserId) profileUserId.textContent = user.userId || user.uid || user.id || "-";
     if (profileAbout) profileAbout.textContent = user.about || "Available";
     if (profilePhone) profilePhone.textContent = user.phone || user.email || "";
+    if (profileMeta) {
+        const createdAt = user.createdAt?.toDate ? user.createdAt.toDate().toLocaleString() : user.createdAt || "";
+        const lastSeen = user.lastSeen?.toDate ? user.lastSeen.toDate().toLocaleString() : user.lastSeen || "";
+        profileMeta.textContent = [createdAt ? `Joined: ${createdAt}` : null, lastSeen ? `Last seen: ${lastSeen}` : null].filter(Boolean).join(" • ");
+    }
 }
 
 function hydrateEditProfilePage() {
@@ -1004,10 +996,12 @@ function hydrateEditProfilePage() {
     const editName = document.getElementById("editName");
     const editAbout = document.getElementById("editAbout");
     const editUsername = document.getElementById("editUsername");
+    const editPhotoURL = document.getElementById("editPhotoURL");
     const editPhone = document.querySelector(".edit-profile-page input[disabled]");
     if (editName) editName.value = user.displayName || "";
     if (editAbout) editAbout.value = user.about || "";
     if (editUsername) editUsername.value = user.username || user.email?.split("@")[0] || "";
+    if (editPhotoURL) editPhotoURL.value = user.photoURL || "";
     if (editPhone) editPhone.value = user.phone || user.email || "";
 }
 
