@@ -61,7 +61,7 @@ async function initializeFirebase() {
             });
             await loadUserProfile(redirectResult.user);
             if (isAuthPage()) {
-                window.location.href = "chats.html";
+                redirectToChats();
             }
         }
     } catch (error) {
@@ -167,18 +167,28 @@ function getFirebaseUserData(user) {
     };
 }
 
+function redirectToChats() {
+    const target = new URL("chats.html", window.location.href);
+    window.location.replace(target.toString());
+}
+
+function redirectToLogin() {
+    const target = new URL("login.html", window.location.href);
+    window.location.replace(target.toString());
+}
+
 function handleFirebaseAuthState(user) {
     if (user) {
         const authUser = getFirebaseUserData(user);
         setCurrentUser(authUser);
         loadUserProfile(user).catch(() => {});
         if (isAuthPage()) {
-            window.location.href = "chats.html";
+            redirectToChats();
         }
     } else {
         clearCurrentUser();
         if (!isAuthPage()) {
-            window.location.href = "login.html";
+            redirectToLogin();
         }
     }
 }
@@ -191,7 +201,7 @@ function isAuthPage() {
 function requireAuth() {
     const user = getCurrentUser();
     if (!user && !isAuthPage()) {
-        window.location.href = "login.html";
+        redirectToLogin();
         return false;
     }
     return true;
@@ -1000,6 +1010,12 @@ async function initializeApp() {
     } else {
         ensureAccountSeed();
     }
+
+    if (isAuthPage() && getCurrentUser() && configured && auth?.currentUser) {
+        redirectToChats();
+        return;
+    }
+
     if (!requireAuth()) return;
 
     if (document.getElementById("signupForm")) {
