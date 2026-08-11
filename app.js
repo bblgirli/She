@@ -298,6 +298,7 @@ async function handleForgotPasswordForm(event) {
         return;
     }
     const email = document.getElementById("forgotEmail")?.value.trim().toLowerCase();
+    clearStatus();
     if (!email) {
         showError("Please enter your email address.");
         return;
@@ -375,6 +376,7 @@ async function handleResetPasswordForm(event) {
     const code = new URLSearchParams(window.location.search).get("oobCode");
     const password = document.getElementById("newPassword")?.value;
     const confirmPassword = document.getElementById("confirmPassword")?.value;
+    clearStatus();
     if (!code) {
         showError("Invalid or missing password reset code.");
         return;
@@ -396,7 +398,46 @@ async function handleResetPasswordForm(event) {
 }
 
 function showError(error) {
-    alert(error?.message || error || "Something went wrong.");
+    const message = error?.message || error || "Something went wrong.";
+    const statusElement = document.getElementById("pageStatus")
+        || document.getElementById("loginStatus")
+        || document.getElementById("signupStatus")
+        || document.getElementById("forgotStatus")
+        || document.getElementById("resetStatus")
+        || document.getElementById("verifyStatus");
+    if (statusElement) {
+        statusElement.textContent = message;
+        statusElement.classList.add("status-error");
+        statusElement.classList.remove("status-success");
+        return;
+    }
+    alert(message);
+}
+
+function showSuccess(message) {
+    const statusElement = document.getElementById("pageStatus")
+        || document.getElementById("loginStatus")
+        || document.getElementById("signupStatus")
+        || document.getElementById("forgotStatus")
+        || document.getElementById("resetStatus")
+        || document.getElementById("verifyStatus");
+    if (statusElement) {
+        statusElement.textContent = message;
+        statusElement.classList.remove("status-error");
+        statusElement.classList.add("status-success");
+        return;
+    }
+    alert(message);
+}
+
+function clearStatus() {
+    ["pageStatus", "loginStatus", "signupStatus", "forgotStatus", "resetStatus", "verifyStatus"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.textContent = "";
+            el.classList.remove("status-error", "status-success");
+        }
+    });
 }
 
 function isFirebaseReady() {
@@ -556,6 +597,7 @@ async function handleSignup(event) {
         ? normalizePhone(`${document.getElementById("countryCode").value}${phoneInput}`)
         : "";
 
+    clearStatus();
     if (!name || !email || !password) {
         showError("Please complete the form.");
         return;
@@ -606,6 +648,7 @@ async function handleLogin(event) {
     const loginValue = document.getElementById("loginEmail").value.trim().toLowerCase();
     const password = document.getElementById("loginPassword").value;
 
+    clearStatus();
     if (!loginValue || !password) {
         showError("Please enter your email and password.");
         return;

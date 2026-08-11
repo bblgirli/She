@@ -151,6 +151,22 @@ button {
     color: #555;
 }
 
+.status-message {
+    margin: 0.75rem 0 0;
+    min-height: 1.25rem;
+    color: #ef4444;
+    font-size: 0.96rem;
+    font-weight: 600;
+}
+
+.status-success {
+    color: #16a34a;
+}
+
+.status-error {
+    color: #ef4444;
+}
+
 .login-text a,
 .terms a {
     color: #078b59;
