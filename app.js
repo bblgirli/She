@@ -671,9 +671,12 @@ function togglePassword(id = "password") {
 function toggleLoginPassword() { togglePassword("loginPassword"); }
 function handleEnter(event) { if (event.key === "Enter") { event.preventDefault(); sendMessage(); } }
 function openChat(name, uid = "") {
+    const params = new URLSearchParams();
+    if (uid) params.set("uid", uid);
+    if (name) params.set("name", name);
     localStorage.setItem("currentChat", name || "Chat");
     if (uid) localStorage.setItem("currentChatUid", uid); else localStorage.removeItem("currentChatUid");
-    window.location.href = "chat.html";
+    window.location.href = `chat.html${params.toString() ? `?${params.toString()}` : ""}`;
 }
 function goBack() { window.location.href = "chats.html"; }
 function showEmoji() { const input = document.getElementById("messageInput"); if (input) { input.value += "😊"; input.focus(); } }
@@ -711,7 +714,7 @@ function searchContacts() {
     const value = input?.value?.trim();
     if (value) {
         currentContactsSearch = value;
-        renderContactsResults();
+        void renderContactsResults();
         return;
     }
 
@@ -721,12 +724,12 @@ function searchContacts() {
     if (input) {
         input.value = currentContactsSearch;
     }
-    renderContactsResults();
+    void renderContactsResults();
 }
 
 function searchContactsInput(event) {
     currentContactsSearch = event.target.value || "";
-    renderContactsResults();
+    void renderContactsResults();
 }
 
 function getContactsResultsContainer() {
@@ -734,7 +737,7 @@ function getContactsResultsContainer() {
 }
 
 function filterContactsData(items, query) {
-    if (!query) return items;
+    if (!query) return [];
     const lowerQuery = query.toLowerCase();
     return items.filter((entry) => {
         const displayName = `${entry.displayName || entry.name || entry.email || ""}`.toLowerCase();
@@ -745,17 +748,52 @@ function filterContactsData(items, query) {
     });
 }
 
-function renderContactsResults() {
+async function searchUsersInFirestore(query) {
+    if (!configured || !db || !auth || !firebaseFirestoreModule) return [];
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) return [];
+
+    const currentUser = getCurrentUser();
+    const currentUserId = currentUser?.uid || currentUser?.id || "";
+    const snapshot = await firebaseFirestoreModule.getDocs(firebaseFirestoreModule.collection(db, "users"));
+
+    return snapshot.docs
+        .map((docItem) => ({ uid: docItem.id, ...docItem.data() }))
+        .filter((userEntry) => {
+            if (!userEntry.uid || userEntry.uid === currentUserId) return false;
+            const displayName = `${userEntry.name || userEntry.displayName || userEntry.email || ""}`.toLowerCase();
+            const email = `${userEntry.email || ""}`.toLowerCase();
+            const phone = `${userEntry.phone || ""}`.toLowerCase();
+            const username = `${userEntry.username || ""}`.toLowerCase();
+            return displayName.includes(normalizedQuery) || email.includes(normalizedQuery) || phone.includes(normalizedQuery) || username.includes(normalizedQuery);
+        })
+        .map((userEntry) => ({
+            ...userEntry,
+            displayName: userEntry.name || userEntry.displayName || userEntry.email || "User",
+            name: userEntry.name || userEntry.displayName || userEntry.email || "User",
+            about: userEntry.about || "Available",
+            photoUrl: userEntry.photoUrl || userEntry.photoURL || userEntry.photo || ""
+        }));
+}
+
+async function renderContactsResults() {
     const resultsContainer = getContactsResultsContainer();
     if (!resultsContainer) return;
     const query = currentContactsSearch.trim();
 
     if (configured && db && auth && firebaseFirestoreModule) {
-        const users = filterContactsData(contactsCache, query);
+        if (!query) {
+            resultsContainer.innerHTML = '<div class="message received"><p>Type a name or email to search registered users.</p></div>';
+            return;
+        }
+
+        resultsContainer.innerHTML = '<div class="message received"><p>Searching…</p></div>';
+        const users = await searchUsersInFirestore(query);
         if (!users.length) {
             resultsContainer.innerHTML = '<div class="message received"><p>No matching users found.</p></div>';
             return;
         }
+
         resultsContainer.innerHTML = users.map((userEntry) => {
             const uid = userEntry.uid || userEntry.id || userEntry.userId || "";
             const name = userEntry.name || userEntry.displayName || userEntry.email || "User";
@@ -1131,12 +1169,52 @@ function renderMessagesForConversation() {
 
 async function hydrateChatPage() {
     const headerName = document.querySelector(".chat-profile h3");
-    const currentName = localStorage.getItem("currentChat") || "Chat";
-    if (headerName) headerName.textContent = currentName;
+    const headerStatus = document.querySelector(".chat-profile p");
+    const avatar = document.querySelector(".small-avatar");
+    const params = new URLSearchParams(window.location.search);
+    const recipientUid = params.get("uid") || localStorage.getItem("currentChatUid") || "";
+    const currentName = params.get("name") || localStorage.getItem("currentChat") || "Chat";
+
+    if (recipientUid) {
+        localStorage.setItem("currentChatUid", recipientUid);
+    }
+    if (currentName) {
+        localStorage.setItem("currentChat", currentName);
+    }
+
+    if (headerName) headerName.textContent = currentName || "Chat";
+    if (headerStatus) headerStatus.textContent = "online";
+    if (avatar) {
+        avatar.innerHTML = "👩🏾";
+    }
+
     if (!configured && !getCurrentUser()) {
         window.location.href = "login.html";
         return;
     }
+
+    if (configured && db && auth && firebaseFirestoreModule && recipientUid) {
+        try {
+            const profileDoc = await firebaseFirestoreModule.getDoc(firebaseFirestoreModule.doc(db, "users", recipientUid));
+            if (profileDoc.exists()) {
+                const profileData = profileDoc.data();
+                const displayName = profileData.name || profileData.displayName || profileData.email || currentName || "User";
+                const about = profileData.about || "Available";
+                const photoURL = profileData.photoUrl || profileData.photoURL || profileData.photo || "";
+                if (headerName) headerName.textContent = displayName;
+                if (headerStatus) headerStatus.textContent = about;
+                if (avatar) {
+                    avatar.innerHTML = photoURL
+                        ? `<img class="avatar-photo" src="${escapeHTML(photoURL)}" alt="${escapeHTML(displayName)}">`
+                        : "👩🏾";
+                }
+                localStorage.setItem("currentChat", displayName);
+            }
+        } catch (error) {
+            console.warn("Unable to load the chat recipient profile.", error);
+        }
+    }
+
     renderMessagesForConversation();
 }
 
