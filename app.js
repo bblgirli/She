@@ -737,7 +737,7 @@ function filterContactsData(items, query) {
     if (!query) return items;
     const lowerQuery = query.toLowerCase();
     return items.filter((entry) => {
-        const displayName = `${entry.displayName || ""}`.toLowerCase();
+        const displayName = `${entry.displayName || entry.name || entry.email || ""}`.toLowerCase();
         const email = `${entry.email || ""}`.toLowerCase();
         const phone = `${entry.phone || ""}`.toLowerCase();
         const username = `${entry.username || ""}`.toLowerCase();
@@ -757,11 +757,16 @@ function renderContactsResults() {
             return;
         }
         resultsContainer.innerHTML = users.map((userEntry) => {
-            const name = userEntry.displayName || userEntry.email || "User";
+            const uid = userEntry.uid || userEntry.id || userEntry.userId || "";
+            const name = userEntry.name || userEntry.displayName || userEntry.email || "User";
             const status = userEntry.about || "Available";
+            const photoURL = userEntry.photoUrl || userEntry.photoURL || userEntry.photo || "";
+            const avatarMarkup = photoURL
+                ? `<img class="avatar-photo" src="${escapeHTML(photoURL)}" alt="${escapeHTML(name)}">`
+                : "👤";
             return `
-                <div class="contact-item" onclick="openChat('${escapeHTML(name)}', '${userEntry.uid}')">
-                    <div class="avatar">👤</div>
+                <div class="contact-item" onclick="openChat(${JSON.stringify(name)}, ${JSON.stringify(uid)})">
+                    <div class="avatar">${avatarMarkup}</div>
                     <div class="contact-details">
                         <h3>${escapeHTML(name)}</h3>
                         <p>${escapeHTML(status)}</p>
@@ -1065,7 +1070,15 @@ function renderContactsList() {
         contactsUnsubscribe = firebaseFirestoreModule.onSnapshot(usersRef, (snapshot) => {
             const users = snapshot.docs
                 .map((docItem) => ({ uid: docItem.id, ...docItem.data() }))
-                .filter((userEntry) => userEntry.uid && userEntry.uid !== (currentUser.uid || currentUser.id));
+                .filter((userEntry) => userEntry.uid && userEntry.uid !== (currentUser.uid || currentUser.id))
+                .map((userEntry) => ({
+                    ...userEntry,
+                    displayName: userEntry.name || userEntry.displayName || userEntry.email || "User",
+                    name: userEntry.name || userEntry.displayName || userEntry.email || "User",
+                    about: userEntry.about || "Available",
+                    photoUrl: userEntry.photoUrl || userEntry.photoURL || userEntry.photo || ""
+                }))
+                .sort((a, b) => (a.displayName || "").localeCompare(b.displayName || ""));
 
             contactsCache = users;
             renderContactsResults();
