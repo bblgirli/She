@@ -34,18 +34,12 @@
 
             <div class="input-box">
 
-                <span>📞</span>
-
-                <select id="loginCountryCode">
-                    <option value="+234">+234</option>
-                    <option value="+1">+1</option>
-                    <option value="+44">+44</option>
-                </select>
+                <span>✉️</span>
 
                 <input
-                    type="text"
-                    id="loginPhone"
-                    placeholder="Phone number or email"
+                    type="email"
+                    id="loginEmail"
+                    placeholder="Email address"
                     required
                 >
 
@@ -59,7 +53,8 @@
                 <input
                     type="password"
                     id="loginPassword"
-                    placeholder="Password (or leave blank for Google fallback)"
+                    placeholder="Password"
+                    required
                 >
 
                 <button
@@ -92,7 +87,7 @@
         </form>
 
         <p class="login-text">
-            Demo account: demo@example.com / demo123
+            Use your Firebase email and password to log in.
         </p>
 
         <div class="or-divider">

@@ -49,6 +49,21 @@ async function initializeFirebase() {
                 }
             }
         });
+
+        const redirectResult = await firebaseAuthModule.getRedirectResult(auth);
+        if (redirectResult?.user) {
+            const signedInUser = getFirebaseUserData(redirectResult.user);
+            setCurrentUser(signedInUser);
+            await saveUserProfile(redirectResult.user, {
+                displayName: redirectResult.user.displayName || "",
+                phone: redirectResult.user.phoneNumber || "",
+                photoURL: redirectResult.user.photoURL || ""
+            });
+            await loadUserProfile(redirectResult.user);
+            if (isAuthPage()) {
+                window.location.href = "chats.html";
+            }
+        }
     } catch (error) {
         console.warn("Firebase unavailable; falling back to local mode.", error);
         configured = false;
@@ -92,8 +107,8 @@ function currentUserFromStorage() {
 
 function getCurrentUser() {
     const storedUser = currentUserFromStorage();
-    if (configured && auth && auth.currentUser) {
-        return storedUser || getFirebaseUserData(auth.currentUser);
+    if (configured && auth) {
+        return auth.currentUser ? (storedUser || getFirebaseUserData(auth.currentUser)) : null;
     }
     return storedUser;
 }
@@ -160,9 +175,11 @@ function handleFirebaseAuthState(user) {
         if (isAuthPage()) {
             window.location.href = "chats.html";
         }
-    } else if (!isAuthPage()) {
+    } else {
         clearCurrentUser();
-        window.location.href = "login.html";
+        if (!isAuthPage()) {
+            window.location.href = "login.html";
+        }
     }
 }
 
@@ -188,7 +205,7 @@ function waitForAuthState() {
 }
 
 function forgotPassword() {
-    const identifier = prompt("Enter your email address or phone number:");
+    const identifier = prompt("Enter your email address:");
     if (!identifier) return;
 
     if (configured && auth && firebaseAuthModule) {
@@ -388,9 +405,12 @@ async function handleSignup(event) {
     const name = document.getElementById("name").value.trim();
     const email = document.getElementById("email").value.trim();
     const password = document.getElementById("password").value;
-    const phone = normalizePhone(`${document.getElementById("countryCode").value}${document.getElementById("phone").value.trim()}`);
+    const phoneInput = document.getElementById("phone").value.trim();
+    const phone = phoneInput
+        ? normalizePhone(`${document.getElementById("countryCode").value}${phoneInput}`)
+        : "";
 
-    if (!name || !email || !password || !phone) {
+    if (!name || !email || !password) {
         showError("Please complete the form.");
         return;
     }
@@ -435,44 +455,23 @@ async function handleLogin(event) {
     event.preventDefault();
     await initializeFirebase();
     ensureAccountSeed();
-    const loginValue = document.getElementById("loginPhone").value.trim();
+    const loginValue = document.getElementById("loginEmail").value.trim().toLowerCase();
     const password = document.getElementById("loginPassword").value;
-    const countryCode = document.getElementById("loginCountryCode")?.value || "+234";
-    const phone = normalizePhone(`${countryCode}${loginValue}`);
-    const loginIdentifier = loginValue.includes("@") ? loginValue.toLowerCase() : phone;
 
-    if (!loginValue) {
-        showError("Please enter your phone number or email.");
+    if (!loginValue || !password) {
+        showError("Please enter your email and password.");
         return;
     }
 
     if (configured && auth && firebaseAuthModule) {
         try {
-            const emailForLogin = loginValue.includes("@") ? loginValue : await resolveLoginEmailFromPhone(phone);
-            if (!emailForLogin) {
-                throw new Error("No account matched that phone number.");
-            }
-            const result = await firebaseAuthModule.signInWithEmailAndPassword(auth, emailForLogin, password);
+            const result = await firebaseAuthModule.signInWithEmailAndPassword(auth, loginValue, password);
             const signedInUser = getFirebaseUserData(result.user);
             setCurrentUser(signedInUser);
             await loadUserProfile(result.user);
             window.location.href = "chats.html";
             return;
         } catch (error) {
-            const state = readState();
-            const account = state.accounts.find((entry) => {
-                const matchesPhone = entry.phone && normalizePhone(entry.phone) === loginIdentifier;
-                const matchesEmail = entry.email && entry.email.toLowerCase() === loginIdentifier.toLowerCase();
-                if (!matchesPhone && !matchesEmail) return false;
-                if (entry.provider === "google") return true;
-                if (!password) return false;
-                return entry.password === password;
-            });
-            if (account) {
-                setCurrentUser(account);
-                window.location.href = "chats.html";
-                return;
-            }
             showError(error);
             return;
         }
@@ -480,11 +479,9 @@ async function handleLogin(event) {
 
     const state = readState();
     const account = state.accounts.find((entry) => {
-        const matchesPhone = entry.phone && normalizePhone(entry.phone) === loginIdentifier;
-        const matchesEmail = entry.email && entry.email.toLowerCase() === loginIdentifier.toLowerCase();
-        if (!matchesPhone && !matchesEmail) return false;
+        const matchesEmail = entry.email && entry.email.toLowerCase() === loginValue;
+        if (!matchesEmail) return false;
         if (entry.provider === "google") return true;
-        if (!password) return false;
         return entry.password === password;
     });
 
@@ -494,35 +491,7 @@ async function handleLogin(event) {
         return;
     }
 
-    if (loginIdentifier.includes("@")) {
-        const existingGoogle = state.accounts.find((entry) => entry.email && entry.email.toLowerCase() === loginIdentifier.toLowerCase() && entry.provider === "google");
-        if (existingGoogle) {
-            setCurrentUser(existingGoogle);
-            window.location.href = "chats.html";
-            return;
-        }
-
-        const create = confirm("No local account matched that email. Create a local Google-style account using this email?");
-        if (create) {
-            const displayName = loginIdentifier.split("@")[0];
-            const user = {
-                id: `local-google-${Date.now()}`,
-                email: loginIdentifier,
-                password: "",
-                displayName,
-                phone: "",
-                about: "Available",
-                provider: "google"
-            };
-            state.accounts.push(user);
-            writeState(state);
-            setCurrentUser(user);
-            window.location.href = "chats.html";
-            return;
-        }
-    }
-
-    showError("No account matched those details. Use Continue with Google or create a new account.");
+    showError("No account matched that email and password.");
 }
 
 async function sendMessage() {
@@ -618,55 +587,17 @@ function logout() {
     }
 }
 async function googleLogin() {
-    if (configured) {
-        if (!auth || !firebaseAuthModule) {
-            alert("Firebase is still loading. Please try again in a moment.");
-            return;
-        }
-
-        try {
-            const provider = new firebaseAuthModule.GoogleAuthProvider();
-            const result = await firebaseAuthModule.signInWithPopup(auth, provider);
-            const signedInUser = getFirebaseUserData(result.user);
-            setCurrentUser(signedInUser);
-            await saveUserProfile(result.user, { displayName: result.user.displayName || "", phone: result.user.phoneNumber || "", photoURL: result.user.photoURL || "" });
-            await loadUserProfile(result.user);
-            window.location.href = "chats.html";
-        } catch (error) {
-            showError(error);
-        }
+    if (!configured || !auth || !firebaseAuthModule) {
+        showError("Firebase Google sign-in is unavailable. Check your Firebase configuration.");
         return;
     }
 
-    const email = prompt("Enter your Google email address:");
-    if (!email) return;
-
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail || !normalizedEmail.includes("@")) {
-        showError("Please enter a valid email address.");
-        return;
+    try {
+        const provider = new firebaseAuthModule.GoogleAuthProvider();
+        await firebaseAuthModule.signInWithRedirect(auth, provider);
+    } catch (error) {
+        showError(error);
     }
-
-    const displayName = prompt("Enter your name for Google sign-in:", normalizedEmail.split("@")[0])?.trim() || normalizedEmail.split("@")[0];
-    const state = readState();
-    let account = state.accounts.find((entry) => entry.email && entry.email.toLowerCase() === normalizedEmail);
-
-    if (!account) {
-        account = {
-            id: `local-google-${Date.now()}`,
-            email: normalizedEmail,
-            password: "",
-            displayName,
-            phone: "",
-            about: "Available",
-            provider: "google"
-        };
-        state.accounts.push(account);
-        writeState(state);
-    }
-
-    setCurrentUser(account);
-    window.location.href = "chats.html";
 }
 function editProfileName() { window.location.href = "edit-profile.html"; }
 function goTo(page) { window.location.href = page; }
