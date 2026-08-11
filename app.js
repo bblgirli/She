@@ -201,10 +201,15 @@ function handleFirebaseAuthState(user) {
         const authUser = getFirebaseUserData(user);
         setCurrentUser(authUser);
         syncUserFirestoreProfile(user).catch(() => {});
-        if (!user.emailVerified && !isVerifyEmailPage() && !window.location.pathname.endsWith("verify-email.html")) {
-            redirectToVerifyEmail();
+
+        const onVerifyPage = isVerifyEmailPage() || window.location.pathname.endsWith("verify-email.html");
+        if (!user.emailVerified) {
+            if (!onVerifyPage) {
+                redirectToVerifyEmail();
+            }
             return;
         }
+
         if (isAuthPage()) {
             redirectToChats();
         }
@@ -1199,9 +1204,19 @@ async function initializeApp() {
         ensureAccountSeed();
     }
 
-    if (isAuthPage() && getCurrentUser() && configured && auth?.currentUser) {
-        redirectToChats();
-        return;
+    if (configured && auth?.currentUser) {
+        const isOnVerifyPage = isVerifyEmailPage() || window.location.pathname.endsWith("verify-email.html");
+        if (!auth.currentUser.emailVerified) {
+            if (!isOnVerifyPage) {
+                redirectToVerifyEmail();
+            }
+            return;
+        }
+
+        if (isAuthPage()) {
+            redirectToChats();
+            return;
+        }
     }
 
     if (!requireAuth()) return;
