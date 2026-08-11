@@ -292,6 +292,24 @@ function initializeVerifyEmailPage() {
     if (verifyStatus) {
         verifyStatus.textContent = "A verification link was sent to the address above. Check your inbox or spam folder.";
     }
+
+    if (configured && auth?.currentUser && !auth.currentUser.emailVerified) {
+        const resendAction = async () => {
+            try {
+                const actionCodeSettings = {
+                    url: `${window.location.origin}/login.html`,
+                    handleCodeInApp: true
+                };
+                await firebaseAuthModule.sendEmailVerification(auth.currentUser, actionCodeSettings);
+                if (verifyStatus) {
+                    verifyStatus.textContent = "A fresh verification email has been sent. Check your inbox and spam folder.";
+                }
+            } catch (error) {
+                showError(error);
+            }
+        };
+        resendAction().catch(() => {});
+    }
     const checkButton = document.getElementById("checkVerification");
     const resendLink = document.getElementById("resendVerifyLink");
     if (checkButton) {
@@ -319,7 +337,11 @@ function initializeVerifyEmailPage() {
                 return;
             }
             try {
-                await firebaseAuthModule.sendEmailVerification(auth.currentUser);
+                const actionCodeSettings = {
+                    url: `${window.location.origin}/login.html`,
+                    handleCodeInApp: true
+                };
+                await firebaseAuthModule.sendEmailVerification(auth.currentUser, actionCodeSettings);
                 const status = document.getElementById("verifyStatus");
                 if (status) {
                     status.textContent = "Verification email resent. Check your inbox.";
@@ -595,7 +617,11 @@ async function handleSignup(event) {
             setCurrentUser(signedInUser);
             await saveUserProfile(result.user, { displayName: name, phone });
             await loadUserProfile(result.user);
-            await firebaseAuthModule.sendEmailVerification(result.user);
+            const actionCodeSettings = {
+                url: `${window.location.origin}/login.html`,
+                handleCodeInApp: true
+            };
+            await firebaseAuthModule.sendEmailVerification(result.user, actionCodeSettings);
             localStorage.setItem("she_verification_email", email);
             window.location.href = "verify-email.html";
             return;
