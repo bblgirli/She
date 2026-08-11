@@ -54,12 +54,12 @@ async function initializeFirebase() {
         if (redirectResult?.user) {
             const signedInUser = getFirebaseUserData(redirectResult.user);
             setCurrentUser(signedInUser);
-            await saveUserProfile(redirectResult.user, {
+            saveUserProfile(redirectResult.user, {
                 displayName: redirectResult.user.displayName || "",
                 phone: redirectResult.user.phoneNumber || "",
                 photoURL: redirectResult.user.photoURL || ""
-            });
-            await loadUserProfile(redirectResult.user);
+            }).catch(() => {});
+            loadUserProfile(redirectResult.user).catch(() => {});
             if (isAuthPage()) {
                 redirectToChats();
             }
