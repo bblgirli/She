@@ -585,10 +585,16 @@ function messageStatusLabel(item) {
 async function updateMessageStatus(conversationId, messageId, newStatus) {
     if (!configured || !db || !firebaseFirestoreModule) return;
     try {
-        await firebaseFirestoreModule.updateDoc(
-            firebaseFirestoreModule.doc(db, "conversations", conversationId, "messages", messageId),
-            { status: newStatus }
-        );
+        // Add 2-second timeout to prevent indefinite hang
+        await Promise.race([
+            firebaseFirestoreModule.updateDoc(
+                firebaseFirestoreModule.doc(db, "conversations", conversationId, "messages", messageId),
+                { status: newStatus }
+            ),
+            new Promise((_, reject) => 
+                setTimeout(() => reject(new Error("Message status update timeout")), 2000)
+            )
+        ]);
     } catch (error) {
         console.warn("Could not update message status:", error);
     }
@@ -603,7 +609,13 @@ async function markConversationMessagesAsRead(conversationId, senderUid) {
             firebaseFirestoreModule.where("senderId", "==", senderUid),
             firebaseFirestoreModule.where("status", "!=", "read")
         );
-        const snapshot = await firebaseFirestoreModule.getDocs(q);
+        // Add 2-second timeout to getDocs query
+        const snapshot = await Promise.race([
+            firebaseFirestoreModule.getDocs(q),
+            new Promise((_, reject) => 
+                setTimeout(() => reject(new Error("getDocs timeout")), 2000)
+            )
+        ]);
         snapshot.docs.forEach((docItem) => {
             updateMessageStatus(conversationId, docItem.id, "read").catch(() => {});
         });
@@ -1579,7 +1591,16 @@ async function initializeApp() {
     updateFirebaseStatus();
 
     if (document.getElementById("messages")) {
-        await hydrateChatPage();
+        // Wrap hydrateChatPage with 3-second timeout to prevent indefinite blocking
+        await Promise.race([
+            hydrateChatPage(),
+            new Promise(resolve => setTimeout(() => {
+                console.warn("hydrateChatPage timeout - continuing app initialization");
+                resolve();
+            }, 3000))
+        ]).catch(err => {
+            console.warn("hydrateChatPage failed:", err);
+        });
     }
 
     if (document.getElementById("chatList") || document.querySelector(".chat-list")) {
