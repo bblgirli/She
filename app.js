@@ -80,40 +80,44 @@ let firebaseInitCompleted = false;  // Track if init finished (success or failur
 async function initializeFirebaseCore() {
     if (!configured || auth || db) return;
 
-    try {
-        console.log("🔥 Firebase: Starting initialization...");
-        console.log("🔥 Firebase config:", { projectId: firebaseConfig.projectId, apiKey: firebaseConfig.apiKey ? "***" : "MISSING" });
+    function showDebug(msg) {
+        console.log(msg);
+        const debugEl = document.getElementById("firebaseDebug");
+        if (debugEl) {
+            debugEl.innerHTML += msg + "<br>";
+            debugEl.scrollTop = debugEl.scrollHeight;
+        }
+    }
 
-        console.log("🔥 Firebase: Loading modules from CDN...");
+    try {
+        showDebug("🔥 Loading Firebase modules...");
+
         const [appModule, authModule, firestoreModule] = await Promise.all([
-            import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js").catch(e => { console.error("❌ app module failed:", e); throw e; }),
-            import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js").catch(e => { console.error("❌ auth module failed:", e); throw e; }),
-            import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js").catch(e => { console.error("❌ firestore module failed:", e); throw e; })
+            import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"),
+            import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"),
+            import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js")
         ]);
 
-        console.log("✅ Firebase: Modules loaded successfully");
+        showDebug("✅ Modules loaded");
         firebaseAuthModule = authModule;
         firebaseFirestoreModule = firestoreModule;
 
-        console.log("🔥 Firebase: Initializing app with config...");
+        showDebug("🔥 Initializing Firebase app...");
         firebaseApp = appModule.initializeApp(firebaseConfig);
-        console.log("✅ Firebase: App initialized");
-
-        console.log("🔥 Firebase: Getting auth instance...");
         auth = authModule.getAuth(firebaseApp);
-        console.log("✅ Firebase: Auth ready");
+        showDebug("✅ Auth initialized");
 
-        console.log("🔥 Firebase: Setting persistence...");
-        await firebaseAuthModule.setPersistence(auth, firebaseAuthModule.browserLocalPersistence).catch(e => console.warn("⚠️ Persistence warning:", e));
-        console.log("✅ Firebase: Persistence set");
+        showDebug("🔥 Setting persistence...");
+        await firebaseAuthModule.setPersistence(auth, firebaseAuthModule.browserLocalPersistence).catch(e => showDebug("⚠️ " + e.message));
+        showDebug("✅ Persistence set");
 
-        console.log("🔥 Firebase: Getting Firestore...");
+        showDebug("🔥 Getting Firestore...");
         db = firestoreModule.getFirestore(firebaseApp);
-        console.log("✅ Firebase: Firestore ready");
+        showDebug("✅ Firestore initialized");
 
-        console.log("🔥 Firebase: Setting up auth state listener...");
+        showDebug("🔥 Setting up auth listener...");
         firebaseAuthModule.onAuthStateChanged(auth, (user) => {
-            console.log("🔥 Auth state changed:", user ? `User ${user.uid}` : "No user");
+            showDebug("Auth: " + (user ? user.uid : "no user"));
             handleFirebaseAuthState(user);
             if (!authStateResolved) {
                 authStateResolved = true;
@@ -123,12 +127,13 @@ async function initializeFirebaseCore() {
                 }
             }
         });
+        showDebug("✅ Auth listener ready");
 
-        console.log("🔥 Firebase: Checking for redirect result...");
+        showDebug("🔥 Checking redirect result...");
         try {
             const redirectResult = await firebaseAuthModule.getRedirectResult(auth);
             if (redirectResult?.user) {
-                console.log("✅ Redirect result found:", redirectResult.user.uid);
+                showDebug("✅ Redirect: " + redirectResult.user.uid);
                 const signedInUser = getFirebaseUserData(redirectResult.user);
                 setCurrentUser(signedInUser);
                 saveUserProfile(redirectResult.user, {
@@ -140,16 +145,18 @@ async function initializeFirebaseCore() {
                 if (isAuthPage()) {
                     redirectToChats();
                 }
+            } else {
+                showDebug("ℹ️ No redirect result");
             }
-        } catch (redirectErr) {
-            console.warn("⚠️ Redirect result error:", redirectErr);
+        } catch (e) {
+            showDebug("⚠️ Redirect error: " + e.message);
         }
 
-        console.log("✅ Firebase: FULLY INITIALIZED AND READY");
+        showDebug("✅ Firebase READY!");
     } catch (error) {
         const errorMsg = error?.message || error?.toString() || "Unknown error";
         firebaseError = errorMsg;
-        console.error("❌ Firebase initialization FAILED:", error);
+        showDebug("❌ ERROR: " + errorMsg);
         configured = false;
     }
 }
@@ -467,38 +474,40 @@ function updateFirebaseStatus() {
     const googleButton = document.querySelector(".google-button");
     
     if (!statusElement) {
-        console.log("updateFirebaseStatus: statusElement not found");
         return;
     }
 
-    // First priority: if there's an error, show it
+    // Show error if exists
     if (firebaseError) {
-        console.log("Showing Firebase error:", firebaseError);
-        statusElement.textContent = "⚠️ " + firebaseError;
+        statusElement.textContent = "❌ " + firebaseError;
         if (errorElement) {
             errorElement.style.display = "block";
-            errorElement.innerHTML = `<strong>Firebase Error:</strong> ${escapeHTML(firebaseError)}`;
+            errorElement.innerHTML = `<strong>Firebase Error:</strong><br>${escapeHTML(firebaseError)}`;
         }
+        if (googleButton) googleButton.disabled = false; // Allow fallback login
+        return;
+    }
+
+    // Show initialization status
+    if (!firebaseInitCompleted) {
+        statusElement.textContent = "⏳ Loading Firebase...";
         if (googleButton) googleButton.disabled = true;
         return;
     }
 
-    // If initialization is complete, show result
-    if (firebaseInitCompleted) {
-        if (auth && firebaseAuthModule && db) {
-            statusElement.textContent = "✅ Firebase ready";
-            if (googleButton) googleButton.disabled = false;
-        } else {
-            statusElement.textContent = "⚠️ Firebase unavailable - local mode";
-            if (googleButton) googleButton.disabled = false;
+    // Firebase initialized - check what's available
+    if (auth && firebaseAuthModule && db) {
+        statusElement.textContent = "✅ Firebase Ready";
+        if (googleButton) googleButton.disabled = false;
+        if (errorElement) errorElement.style.display = "none";
+    } else {
+        statusElement.textContent = "⚠️ Local Mode (Firebase unavailable)";
+        if (googleButton) googleButton.disabled = false;
+        if (errorElement) {
+            errorElement.style.display = "block";
+            errorElement.innerHTML = "<strong>Firebase CDN unreachable</strong> — You can still sign in with local account or try again.";
         }
-        console.log("Status: Firebase init complete -", statusElement.textContent);
-        return;
     }
-
-    // Still waiting
-    statusElement.textContent = "⏳ Loading Firebase...";
-    if (googleButton) googleButton.disabled = true;
 }
 
 function normalizePhone(value = "") {
