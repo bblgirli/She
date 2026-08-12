@@ -1,7 +1,19 @@
 import { firebaseConfig } from "./firebase-config.js";
 
+// Global debug function that writes to both console AND the debug panel
+window.showDebug = function(msg) {
+    console.log(msg);
+    const debugEl = document.getElementById("firebaseDebug");
+    if (debugEl) {
+        const line = document.createElement("div");
+        line.textContent = msg;
+        debugEl.appendChild(line);
+        debugEl.scrollTop = debugEl.scrollHeight;
+    }
+};
+
 // Log immediately when script loads
-console.log("app.js loaded at", new Date().toISOString());
+window.showDebug("app.js loaded");
 
 // Set an absolute hard stop - after 4 seconds, give up on Firebase and let user continue
 const FIREBASE_TIMEOUT = 4000;
@@ -9,6 +21,7 @@ const startTime = Date.now();
 
 // Immediate status update - show we're alive
 document.addEventListener("DOMContentLoaded", () => {
+    window.showDebug("DOM ready");
     const el = document.getElementById("firebaseStatus");
     if (el) {
         el.textContent = "⏳ Loading Firebase...";
@@ -17,12 +30,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // Force update immediately even if DOM not ready
 if (document.readyState === "loading") {
+    window.showDebug("Document still loading");
     document.addEventListener("DOMContentLoaded", () => {
         const el = document.getElementById("firebaseStatus");
         if (el) el.textContent = "⏳ Loading Firebase...";
     });
 } else {
     // DOM already ready
+    window.showDebug("Document already ready");
     const el = document.getElementById("firebaseStatus");
     if (el) el.textContent = "⏳ Loading Firebase...";
 }
@@ -31,14 +46,14 @@ if (document.readyState === "loading") {
 setTimeout(() => {
     const el = document.getElementById("firebaseStatus");
     if (el && el.textContent.includes("Loading")) {
-        console.log("2s checkpoint: showing ready status");
+        window.showDebug("2s checkpoint: showing ready");
         el.textContent = "✅ Ready - you can sign in";
     }
 }, 2000);
 
 // After 4 seconds, definitely show as ready
 setTimeout(() => {
-    console.warn("4s checkpoint: Firebase must be ready or use local mode");
+    window.showDebug("4s checkpoint: Firebase timeout");
     window.firebaseInitCompleted = true;
     const el = document.getElementById("firebaseStatus");
     if (el) {
@@ -80,17 +95,8 @@ let firebaseInitCompleted = false;  // Track if init finished (success or failur
 async function initializeFirebaseCore() {
     if (!configured || auth || db) return;
 
-    function showDebug(msg) {
-        console.log(msg);
-        const debugEl = document.getElementById("firebaseDebug");
-        if (debugEl) {
-            debugEl.innerHTML += msg + "<br>";
-            debugEl.scrollTop = debugEl.scrollHeight;
-        }
-    }
-
     try {
-        showDebug("🔥 Loading Firebase modules...");
+        window.showDebug("🔥 Loading Firebase modules...");
 
         const [appModule, authModule, firestoreModule] = await Promise.all([
             import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"),
@@ -98,26 +104,26 @@ async function initializeFirebaseCore() {
             import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js")
         ]);
 
-        showDebug("✅ Modules loaded");
+        window.showDebug("✅ Modules loaded");
         firebaseAuthModule = authModule;
         firebaseFirestoreModule = firestoreModule;
 
-        showDebug("🔥 Initializing Firebase app...");
+        window.showDebug("🔥 Initializing Firebase app...");
         firebaseApp = appModule.initializeApp(firebaseConfig);
         auth = authModule.getAuth(firebaseApp);
-        showDebug("✅ Auth initialized");
+        window.showDebug("✅ Auth initialized");
 
-        showDebug("🔥 Setting persistence...");
-        await firebaseAuthModule.setPersistence(auth, firebaseAuthModule.browserLocalPersistence).catch(e => showDebug("⚠️ " + e.message));
-        showDebug("✅ Persistence set");
+        window.showDebug("🔥 Setting persistence...");
+        await firebaseAuthModule.setPersistence(auth, firebaseAuthModule.browserLocalPersistence).catch(e => window.showDebug("⚠️ " + e.message));
+        window.showDebug("✅ Persistence set");
 
-        showDebug("🔥 Getting Firestore...");
+        window.showDebug("🔥 Getting Firestore...");
         db = firestoreModule.getFirestore(firebaseApp);
-        showDebug("✅ Firestore initialized");
+        window.showDebug("✅ Firestore initialized");
 
-        showDebug("🔥 Setting up auth listener...");
+        window.showDebug("🔥 Setting up auth listener...");
         firebaseAuthModule.onAuthStateChanged(auth, (user) => {
-            showDebug("Auth: " + (user ? user.uid : "no user"));
+            window.showDebug("Auth: " + (user ? user.uid : "no user"));
             handleFirebaseAuthState(user);
             if (!authStateResolved) {
                 authStateResolved = true;
@@ -127,13 +133,13 @@ async function initializeFirebaseCore() {
                 }
             }
         });
-        showDebug("✅ Auth listener ready");
+        window.showDebug("✅ Auth listener ready");
 
-        showDebug("🔥 Checking redirect result...");
+        window.showDebug("🔥 Checking redirect result...");
         try {
             const redirectResult = await firebaseAuthModule.getRedirectResult(auth);
             if (redirectResult?.user) {
-                showDebug("✅ Redirect: " + redirectResult.user.uid);
+                window.showDebug("✅ Redirect: " + redirectResult.user.uid);
                 const signedInUser = getFirebaseUserData(redirectResult.user);
                 setCurrentUser(signedInUser);
                 saveUserProfile(redirectResult.user, {
@@ -146,17 +152,17 @@ async function initializeFirebaseCore() {
                     redirectToChats();
                 }
             } else {
-                showDebug("ℹ️ No redirect result");
+                window.showDebug("ℹ️ No redirect result");
             }
         } catch (e) {
-            showDebug("⚠️ Redirect error: " + e.message);
+            window.showDebug("⚠️ Redirect error: " + e.message);
         }
 
-        showDebug("✅ Firebase READY!");
+        window.showDebug("✅ Firebase READY!");
     } catch (error) {
         const errorMsg = error?.message || error?.toString() || "Unknown error";
         firebaseError = errorMsg;
-        showDebug("❌ ERROR: " + errorMsg);
+        window.showDebug("❌ ERROR: " + errorMsg);
         configured = false;
     }
 }
