@@ -28,21 +28,33 @@ async function initializeFirebaseCore() {
     if (!configured || auth || db) return;
 
     try {
+        console.log("Starting Firebase initialization...");
+        
         // Import all Firebase modules in parallel for faster loading
+        console.log("Importing Firebase modules...");
         const [appModule, authModule, firestoreModule] = await Promise.all([
             import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"),
             import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"),
             import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js")
         ]);
+        console.log("Firebase modules imported successfully");
 
         firebaseAuthModule = authModule;
         firebaseFirestoreModule = firestoreModule;
+        
+        console.log("Initializing Firebase app...");
         firebaseApp = appModule.initializeApp(firebaseConfig);
         auth = authModule.getAuth(firebaseApp);
+        
+        console.log("Setting persistence...");
         await firebaseAuthModule.setPersistence(auth, firebaseAuthModule.browserLocalPersistence);
+        console.log("Persistence set");
+        
         db = firestoreModule.getFirestore(firebaseApp);
+        console.log("Firebase initialized successfully");
 
         firebaseAuthModule.onAuthStateChanged(auth, (user) => {
+            console.log("Auth state changed:", user ? `User ${user.uid}` : "No user");
             handleFirebaseAuthState(user);
             if (!authStateResolved) {
                 authStateResolved = true;
@@ -53,11 +65,14 @@ async function initializeFirebaseCore() {
             }
         });
 
+        console.log("Getting redirect result...");
         const redirectResult = await Promise.race([
             firebaseAuthModule.getRedirectResult(auth),
             new Promise((resolve) => setTimeout(() => resolve(null), 2000))
         ]);
+        
         if (redirectResult?.user) {
+            console.log("Redirect result found:", redirectResult.user.uid);
             const signedInUser = getFirebaseUserData(redirectResult.user);
             setCurrentUser(signedInUser);
             saveUserProfile(redirectResult.user, {
@@ -71,6 +86,7 @@ async function initializeFirebaseCore() {
             }
         }
     } catch (error) {
+        console.error("Firebase initialization error:", error);
         console.warn("Firebase unavailable; falling back to local mode.", error);
         configured = false;
     }
@@ -78,19 +94,19 @@ async function initializeFirebaseCore() {
 
 async function initializeFirebase() {
     try {
+        console.log("Firebase initialization started");
         await Promise.race([
             initializeFirebaseCore(),
             new Promise((resolve) => {
                 setTimeout(() => {
-                    console.warn("Firebase initialization timeout (3s) - using local mode");
-                    configured = false;
+                    console.warn("Firebase initialization timeout (10s) - continuing with current state");
                     resolve();
-                }, 3000);
+                }, 10000);
             })
         ]);
+        console.log("Firebase initialization completed or timed out");
     } catch (error) {
-        console.warn("Firebase initialization failed:", error);
-        configured = false;
+        console.error("Firebase initialization error:", error);
     }
 }
 
@@ -252,13 +268,20 @@ function requireAuth() {
 }
 
 function waitForAuthState() {
-    if (!configured || authStateResolved) return Promise.resolve();
+    if (!configured || authStateResolved) {
+        console.log("Auth state already resolved or Firebase not configured");
+        return Promise.resolve();
+    }
+    console.log("Waiting for auth state...");
     return Promise.race([
         new Promise((resolve) => {
             authStatePromiseResolve = resolve;
         }),
         new Promise((resolve) => {
-            setTimeout(resolve, 3000); // 3 second timeout to prevent hanging
+            setTimeout(() => {
+                console.log("Auth state timeout after 3 seconds");
+                resolve();
+            }, 3000);
         })
     ]);
 }
@@ -1326,18 +1349,7 @@ async function initializeApp() {
     // Update status immediately to show Firebase is loading
     updateFirebaseStatus();
     
-    // Emergency fallback: force local mode after 2 seconds if Firebase isn't ready
-    const emergencyFallback = new Promise(resolve => {
-        setTimeout(() => {
-            if (!auth || !firebaseAuthModule) {
-                console.warn("Emergency fallback: Firebase not ready, forcing local mode");
-                configured = false;
-            }
-            resolve();
-        }, 2000);
-    });
-    
-    // Start Firebase initialization in the background (don't wait for it)
+    // Start Firebase initialization in the background
     const firebaseInit = initializeFirebase().catch(err => {
         console.error("Firebase init error:", err);
     });
@@ -1345,10 +1357,10 @@ async function initializeApp() {
     // Update status periodically while Firebase is initializing
     const statusInterval = setInterval(() => {
         updateFirebaseStatus();
-    }, 500);
+    }, 300);
     
-    // Wait for both Firebase initialization and emergency fallback
-    await Promise.race([firebaseInit, emergencyFallback]);
+    // Wait for Firebase initialization (with timeout)
+    await firebaseInit;
     clearInterval(statusInterval);
     
     // Final status update
