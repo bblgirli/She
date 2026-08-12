@@ -497,25 +497,13 @@ async function saveUserProfile(user, data = {}) {
         return;
     }
 
-    const state = readState();
-    const account = state.accounts.find((entry) => entry.email.toLowerCase() === (user.email || "").toLowerCase());
-    if (!account) return;
-    Object.assign(account, {
-        displayName: profileData.name || profileData.displayName || account.displayName || "",
-        phone: profileData.phone || account.phone || "",
-        about: profileData.about || account.about || "Available",
-        username: profileData.username || account.username || "",
-        photoURL: profileData.photoUrl || profileData.photoURL || account.photoURL || "",
-        userId: profileData.userId || account.userId || account.id
-    });
-    writeState(state);
-    setCurrentUser(account);
+    // Local accounts not supported - Firebase required
+    console.error("Cannot save user profile: Firebase not configured.");
 }
 
 async function handleSignup(event) {
     event.preventDefault();
     await initializeFirebase();
-    ensureAccountSeed();
     const name = document.getElementById("name").value.trim();
     const email = document.getElementById("email").value.trim();
     const password = document.getElementById("password").value;
@@ -530,47 +518,30 @@ async function handleSignup(event) {
         return;
     }
 
-    if (configured && auth && firebaseAuthModule) {
-        try {
-            const result = await firebaseAuthModule.createUserWithEmailAndPassword(auth, email, password);
-            await firebaseAuthModule.updateProfile(result.user, { displayName: name });
-            const signedInUser = getFirebaseUserData(result.user);
-            setCurrentUser(signedInUser);
-            await saveUserProfile(result.user, { displayName: name, phone });
-            await loadUserProfile(result.user);
-            localStorage.setItem("she_verification_email", email);
-            window.location.href = "chats.html";
-            return;
-        } catch (error) {
-            showError(error);
-            return;
-        }
-    }
-
-    const state = readState();
-    if (state.accounts.some((entry) => entry.email.toLowerCase() === email.toLowerCase())) {
-        showError("An account with that email already exists.");
+    if (!configured || !auth || !firebaseAuthModule) {
+        showError("Firebase is not configured. Local accounts are not supported.");
         return;
     }
 
-    const user = {
-        id: `local-${Date.now()}`,
-        email,
-        password,
-        displayName: name,
-        phone,
-        about: "Available"
-    };
-    state.accounts.push(user);
-    writeState(state);
-    setCurrentUser(user);
-    window.location.href = "chats.html";
+    try {
+        const result = await firebaseAuthModule.createUserWithEmailAndPassword(auth, email, password);
+        await firebaseAuthModule.updateProfile(result.user, { displayName: name });
+        const signedInUser = getFirebaseUserData(result.user);
+        setCurrentUser(signedInUser);
+        await saveUserProfile(result.user, { displayName: name, phone });
+        await loadUserProfile(result.user);
+        localStorage.setItem("she_verification_email", email);
+        window.location.href = "chats.html";
+        return;
+    } catch (error) {
+        showError(error);
+        return;
+    }
 }
 
 async function handleLogin(event) {
     event.preventDefault();
     await initializeFirebase();
-    ensureAccountSeed();
     const loginValue = document.getElementById("loginEmail").value.trim().toLowerCase();
     const password = document.getElementById("loginPassword").value;
 
@@ -580,29 +551,22 @@ async function handleLogin(event) {
         return;
     }
 
-    if (configured && auth && firebaseAuthModule) {
-        try {
-            const result = await firebaseAuthModule.signInWithEmailAndPassword(auth, loginValue, password);
-            const signedInUser = getFirebaseUserData(result.user);
-            setCurrentUser(signedInUser);
-            await loadUserProfile(result.user);
-            redirectToChats();
-            return;
-        } catch (error) {
-            showError(error);
-            return;
-        }
-    }
-
-    const state = readState();
-    const account = state.accounts.find((entry) => entry.email.toLowerCase() === loginValue && entry.password === password);
-    if (account) {
-        setCurrentUser(account);
-        window.location.href = "chats.html";
+    if (!configured || !auth || !firebaseAuthModule) {
+        showError("Firebase is not configured. Local accounts are not supported.");
         return;
     }
 
-    showError("No account matched that email and password.");
+    try {
+        const result = await firebaseAuthModule.signInWithEmailAndPassword(auth, loginValue, password);
+        const signedInUser = getFirebaseUserData(result.user);
+        setCurrentUser(signedInUser);
+        await loadUserProfile(result.user);
+        redirectToChats();
+        return;
+    } catch (error) {
+        showError(error);
+        return;
+    }
 }
 
 async function sendMessage() {
@@ -642,19 +606,8 @@ async function sendMessage() {
         }
     }
 
-    const key = conversationKey();
-    const state = readState();
-    const list = state.messages[key] || [];
-    list.push({
-        text,
-        senderId: user.id || user.uid || user.email,
-        status: "Sent",
-        createdAt: new Date().toISOString()
-    });
-    state.messages[key] = list;
-    writeState(state);
-    input.value = "";
-    renderLocalMessages();
+    // Firebase is required - local messages not supported
+    showError("Firebase is required to send messages. Please sign in with your Firebase account.");
 }
 
 function formatTime(timestamp) {
@@ -822,38 +775,8 @@ async function renderContactsResults() {
         return;
     }
 
-    const state = readState();
-    const currentUser = getCurrentUser();
-    const currentUserKey = currentUser?.id || currentUser?.uid || currentUser?.email || "guest";
-    const phoneList = (state.contacts && state.contacts[currentUserKey]) || [];
-    const contacts = phoneList.map((phone) => {
-        const account = state.accounts.find((entry) => normalizePhone(entry.phone) === normalizePhone(phone));
-        const name = account?.displayName || account?.email || phone;
-        return {
-            name,
-            phone,
-            email: account?.email || "",
-            displayName: name,
-            username: account?.username || "",
-            uid: account?.id || account?.uid || account?.email || phone
-        };
-    });
-
-    const filtered = filterContactsData(contacts, query);
-    if (!filtered.length) {
-        resultsContainer.innerHTML = '<div class="message received"><p>No contacts found.</p></div>';
-        return;
-    }
-
-    resultsContainer.innerHTML = filtered.map((contact) => `
-        <div class="contact-item" onclick="openChat('${escapeHTML(contact.name)}', '${escapeHTML(contact.uid)}')">
-            <div class="avatar">👤</div>
-            <div class="contact-details">
-                <h3>${escapeHTML(contact.name)}</h3>
-                <p>${escapeHTML(contact.phone)}</p>
-            </div>
-        </div>
-    `).join("");
+    // Local contacts disabled - only Firestore users supported
+    resultsContainer.innerHTML = '<div class="message received"><p>No matching users found.</p></div>';
 }
 
 function searchCalls() { alert("Calls are managed through your connected contacts."); }
@@ -861,35 +784,7 @@ function openMenu() { window.location.href = "profile.html"; }
 function newChat() { window.location.href = "new-chat.html"; }
 function createGroup() { window.location.href = "new-group.html"; }
 function createContact() {
-    const phone = prompt("Enter the phone number of the person you want to add:");
-    if (!phone) return;
-    const normalizedPhone = normalizePhone(phone);
-    if (!normalizedPhone) {
-        showError("Please enter a valid phone number.");
-        return;
-    }
-
-    const currentUser = getCurrentUser();
-    if (!currentUser) {
-        showError("Please sign in first.");
-        return;
-    }
-
-    const state = readState();
-    const contacts = state.contacts || {};
-    contacts[currentUser.id || currentUser.uid || currentUser.email] = contacts[currentUser.id || currentUser.uid || currentUser.email] || [];
-    contacts[currentUser.id || currentUser.uid || currentUser.email].push(normalizedPhone);
-    state.contacts = contacts;
-    writeState(state);
-
-    const foundAccount = state.accounts.find((entry) => normalizePhone(entry.phone) === normalizedPhone);
-    if (foundAccount) {
-        openChat(foundAccount.displayName || foundAccount.email || normalizedPhone, foundAccount.id || foundAccount.uid || foundAccount.email);
-        return;
-    }
-
-    alert(`Added contact request for ${normalizedPhone}. If that number is registered, it will appear in your chats after sign-in.`);
-}
+    alert("Use the search function in 'New Chat' to find users on this Firebase app. Local contact numbers are not supported.");
 function startCall() { alert("Voice calls require a WebRTC service and are not enabled yet."); }
 function startVideoCall() { alert("Video calls require a WebRTC service and are not enabled yet."); }
 function attachFile() { alert("File uploads require Firebase Storage setup."); }
@@ -1057,43 +952,8 @@ async function renderChatList() {
         return;
     }
 
-    const state = readState();
-    const currentUser = getCurrentUser();
-    const currentUserKey = currentUser?.id || currentUser?.uid || currentUser?.email || "guest";
-    const phoneList = (state.contacts && state.contacts[currentUserKey]) || [];
-
-    if (!phoneList.length) {
-        container.innerHTML = '<div class="message received"><p>Add someone by phone number to start a real conversation.</p></div>';
-        return;
-    }
-
-    const html = phoneList.map((phone) => {
-        const account = state.accounts.find((entry) => normalizePhone(entry.phone) === normalizePhone(phone));
-        const name = account?.displayName || account?.email || phone;
-        const uid = account?.id || account?.uid || account?.email || phone;
-        const key = conversationKey(uid);
-        const messages = state.messages[key] || [];
-        const lastMessage = messages[messages.length - 1];
-        const preview = lastMessage ? lastMessage.text : "Tap to chat";
-        const time = lastMessage ? formatTime(lastMessage.createdAt) : "Now";
-        return `
-            <div class="chat-item" onclick="openChat('${escapeHTML(name)}', '${escapeHTML(uid)}')">
-                <div class="avatar">👤</div>
-                <div class="chat-details">
-                    <div class="chat-top">
-                        <h3>${escapeHTML(name)}</h3>
-                        <span>${time}</span>
-                    </div>
-                    <div class="chat-bottom">
-                        <p>${escapeHTML(preview)}</p>
-                        ${messages.length ? '<span class="unread">1</span>' : ""}
-                    </div>
-                </div>
-            </div>
-        `;
-    }).join("");
-
-    container.innerHTML = html;
+    // Local contacts not supported - Firebase required
+    container.innerHTML = '<div class="message received"><p>Firebase is required. Please sign in with your Firebase account.</p></div>';
 }
 
 function renderContactsList() {
@@ -1171,7 +1031,8 @@ function renderMessagesForConversation() {
         return;
     }
 
-    renderLocalMessages();
+    // Local messages not supported - Firebase required
+    messagesContainer.innerHTML = '<div class="message received"><p>Firebase is required. Please sign in to view messages.</p></div>';
 }
 
 async function hydrateChatPage() {
@@ -1230,7 +1091,8 @@ async function initializeApp() {
     if (configured) {
         await waitForAuthState();
     } else {
-        ensureAccountSeed();
+        showError("Firebase is required. Please configure Firebase in firebase-config.js");
+        return;
     }
 
     if (configured && auth?.currentUser && isAuthPage()) {
