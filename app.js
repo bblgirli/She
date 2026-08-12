@@ -1,5 +1,32 @@
 import { firebaseConfig } from "./firebase-config.js";
 
+// EMERGENCY: Set an absolute hard timeout at module load time
+// This runs IMMEDIATELY before anything else and guarantees page progresses
+const EMERGENCY_TIMEOUT_MS = 2000;
+setTimeout(() => {
+    console.warn("EMERGENCY TIMEOUT: 2 seconds elapsed, forcing status update");
+    const statusEl = document.getElementById("firebaseStatus");
+    const errorEl = document.getElementById("firebaseError");
+    const googleBtn = document.querySelector(".google-button");
+    
+    if (statusEl) {
+        statusEl.textContent = "❌ Firebase unavailable - using local mode";
+    }
+    if (errorEl) {
+        errorEl.style.display = "block";
+        errorEl.innerHTML = "<strong>⚠️ Firebase Error:</strong> CDN timeout (2s) - app in local mode";
+    }
+    if (googleBtn) {
+        googleBtn.disabled = false;
+    }
+    
+    // Mark as timed out
+    if (typeof window !== 'undefined') {
+        window.firebaseInitCompleted = true;
+        window.firebaseError = "Firebase CDN timeout at module load";
+    }
+}, EMERGENCY_TIMEOUT_MS);
+
 const STORAGE_KEY = "she_app_state";
 const CURRENT_USER_KEY = "she_current_user";
 
