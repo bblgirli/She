@@ -1,5 +1,17 @@
 import { firebaseConfig } from "./firebase-config.js";
 
+// ABSOLUTE EMERGENCY: Set timeout at module level before anything else
+if (typeof document !== 'undefined') {
+    setTimeout(() => {
+        const el = document.getElementById("firebaseStatus");
+        if (el && el.textContent === "⏳ Checking Firebase status...") {
+            el.textContent = "⚠️ Firebase load timeout - local mode";
+            window.firebaseInitCompleted = true;
+            window.firebaseError = "Module load timeout";
+        }
+    }, 8000);
+}
+
 const STORAGE_KEY = "she_app_state";
 const CURRENT_USER_KEY = "she_current_user";
 
@@ -33,10 +45,20 @@ async function initializeFirebaseCore() {
         console.log("Starting Firebase initialization...");
         console.log("Importing Firebase modules from CDN...");
 
-        const [appModule, authModule, firestoreModule] = await Promise.all([
+        // Wrap module imports with 8-second timeout
+        const moduleImportPromise = Promise.all([
             import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"),
             import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"),
             import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js")
+        ]);
+
+        const moduleImportTimeout = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error("Firebase module import timeout (8s)")), 8000);
+        });
+
+        const [appModule, authModule, firestoreModule] = await Promise.race([
+            moduleImportPromise,
+            moduleImportTimeout
         ]);
 
         console.log("Firebase modules imported successfully");
@@ -48,7 +70,10 @@ async function initializeFirebaseCore() {
         auth = authModule.getAuth(firebaseApp);
 
         console.log("Setting persistence...");
-        await firebaseAuthModule.setPersistence(auth, firebaseAuthModule.browserLocalPersistence);
+        await Promise.race([
+            firebaseAuthModule.setPersistence(auth, firebaseAuthModule.browserLocalPersistence),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("Persistence timeout")), 3000))
+        ]);
         console.log("Persistence set");
 
         db = firestoreModule.getFirestore(firebaseApp);
@@ -67,7 +92,10 @@ async function initializeFirebaseCore() {
         });
 
         console.log("Getting redirect result...");
-        const redirectResult = await firebaseAuthModule.getRedirectResult(auth);
+        const redirectResult = await Promise.race([
+            firebaseAuthModule.getRedirectResult(auth),
+            new Promise((resolve) => setTimeout(() => resolve(null), 2000))
+        ]);
 
         if (redirectResult?.user) {
             console.log("Redirect result found:", redirectResult.user.uid);
@@ -97,13 +125,13 @@ async function initializeFirebase() {
     console.log(">>> initializeFirebase() STARTING");
     try {
         console.log("Firebase initialization started");
-        // Set a 15-second maximum timeout for Firebase init
+        // Set a 10-second maximum timeout for Firebase init
         await Promise.race([
             initializeFirebaseCore(),
             new Promise((_, reject) => {
                 setTimeout(() => {
-                    reject(new Error("Firebase initialization timeout after 15 seconds"));
-                }, 15000);
+                    reject(new Error("Firebase initialization timeout after 10 seconds"));
+                }, 10000);
             })
         ]);
         console.log("Firebase initialization completed");
@@ -118,13 +146,13 @@ async function initializeFirebase() {
     } finally {
         firebaseInitCompleted = true;
         console.log(">>> FINALLY: Firebase init flow complete. auth=" + !!auth + " module=" + !!firebaseAuthModule + " error=" + firebaseError);
+        // Force immediate status update
         try {
-            if (typeof updateFirebaseStatus === 'function') {
-                console.log(">>> Calling updateFirebaseStatus from finally block");
-                updateFirebaseStatus();
-            }
+            const statusEl = document.getElementById("firebaseStatus");
+            if (statusEl) {\n                if (!auth || !firebaseAuthModule) {\n                    statusEl.textContent = "⚠️ Firebase unavailable - using local mode";\n                } else {\n                    statusEl.textContent = "✅ Firebase is ready";\n                }\n            }
+            if (typeof updateFirebaseStatus === 'function') {\n                updateFirebaseStatus();\n            }
         } catch (e) {
-            console.error(">>> Error calling updateFirebaseStatus:", e);
+            console.error(">>> Error updating status:", e);
         }
     }
 }
