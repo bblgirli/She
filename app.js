@@ -810,7 +810,7 @@ async function renderContactsResults() {
                 ? `<img class="avatar-photo" src="${escapeHTML(photoURL)}" alt="${escapeHTML(name)}">`
                 : "👤";
             return `
-                <div class="contact-item" onclick="openChat(${JSON.stringify(name)}, ${JSON.stringify(uid)})">
+                <div class="contact-item" onclick="openChat('${escapeHTML(name)}', '${escapeHTML(uid)}')">
                     <div class="avatar">${avatarMarkup}</div>
                     <div class="contact-details">
                         <h3>${escapeHTML(name)}</h3>
