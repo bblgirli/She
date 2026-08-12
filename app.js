@@ -24,6 +24,7 @@ let currentContactsSearch = "";
 let authStateResolved = false;
 let authStatePromiseResolve = null;
 let firebaseError = null;
+let firebaseInitCompleted = false;  // Track if init finished (success or failure)
 
 async function initializeFirebaseCore() {
     if (!configured || auth || db) return;
@@ -31,13 +32,19 @@ async function initializeFirebaseCore() {
     try {
         console.log("Starting Firebase initialization...");
         
-        // Import all Firebase modules in parallel for faster loading
+        // Import all Firebase modules in parallel with timeout
         console.log("Importing Firebase modules...");
-        const [appModule, authModule, firestoreModule] = await Promise.all([
+        const importPromise = Promise.all([
             import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"),
             import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"),
             import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js")
         ]);
+        
+        const importTimeout = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("Firebase module import timeout (3s)")), 3000)
+        );
+        
+        const [appModule, authModule, firestoreModule] = await Promise.race([importPromise, importTimeout]);
         console.log("Firebase modules imported successfully");
 
         firebaseAuthModule = authModule;
@@ -48,7 +55,11 @@ async function initializeFirebaseCore() {
         auth = authModule.getAuth(firebaseApp);
         
         console.log("Setting persistence...");
-        await firebaseAuthModule.setPersistence(auth, firebaseAuthModule.browserLocalPersistence);
+        const persistencePromise = firebaseAuthModule.setPersistence(auth, firebaseAuthModule.browserLocalPersistence);
+        const persistenceTimeout = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("Firebase persistence timeout (2s)")), 2000)
+        );
+        await Promise.race([persistencePromise, persistenceTimeout]);
         console.log("Persistence set");
         
         db = firestoreModule.getFirestore(firebaseApp);
@@ -103,13 +114,13 @@ async function initializeFirebase() {
             initializeFirebaseCore(),
             new Promise((resolve) => {
                 setTimeout(() => {
-                    const timeoutMsg = "Firebase initialization timeout (10s) - continuing with current state";
+                    const timeoutMsg = "Firebase initialization timeout (5s) - continuing with current state";
                     console.warn(timeoutMsg);
                     if (!firebaseError) {
                         firebaseError = timeoutMsg;
                     }
                     resolve();
-                }, 10000);
+                }, 5000);
             })
         ]);
         console.log("Firebase initialization completed or timed out");
@@ -121,6 +132,10 @@ async function initializeFirebase() {
         firebaseError = errorMsg;
         console.error("Firebase initialization error:", error);
         console.error("Error message:", errorMsg);
+    } finally {
+        // Mark initialization as complete regardless of success or failure
+        firebaseInitCompleted = true;
+        console.log("Firebase initialization flow completed (auth available:", !!auth, "firebaseAuthModule available:", !!firebaseAuthModule, ")");
     }
 }
 
@@ -427,6 +442,13 @@ function updateFirebaseStatus() {
     if (!configured) {
         statusElement.textContent = "⚠️ Using local mode (Firebase unavailable)";
         if (googleButton) googleButton.disabled = false;
+        return;
+    }
+
+    // If initialization is complete but auth/authModule not ready, show error state
+    if (firebaseInitCompleted && (!auth || !firebaseAuthModule)) {
+        statusElement.textContent = "⚠️ Firebase loaded but auth unavailable";
+        if (googleButton) googleButton.disabled = false;  // Still allow local login
         return;
     }
 
@@ -1377,14 +1399,36 @@ async function initializeApp() {
         console.error("Firebase init error:", err);
     });
     
-    // Update status periodically while Firebase is initializing
+    // Update status frequently while Firebase is initializing (every 200ms instead of 300ms)
     const statusInterval = setInterval(() => {
         updateFirebaseStatus();
-    }, 300);
+    }, 200);
     
-    // Wait for Firebase initialization (with timeout)
+    // Wait for Firebase initialization (will complete within 5 seconds max due to timeout)
     await firebaseInit;
     clearInterval(statusInterval);
+    
+    // CRITICAL: Final status update to ensure message changes if init timed out
+    console.log("Final status update: initialized=", firebaseInitCompleted, "auth=", !!auth, "module=", !!firebaseAuthModule, "error=", firebaseError);
+    updateFirebaseStatus();
+    
+    // Only wait for auth state if Firebase is actually configured and initialized
+    if (configured && auth && firebaseAuthModule) {
+        try {
+            console.log("Waiting for auth state...");
+            await waitForAuthState();
+            
+            if (auth?.currentUser && isAuthPage()) {
+                console.log("User logged in, redirecting to chats");
+                redirectToChats();
+                return;
+            }
+        } catch (err) {
+            console.warn("Auth state check failed:", err);
+        }
+    } else {
+        console.log("Firebase not ready or not configured - skipping auth state wait. configured=", configured, "auth=", !!auth, "module=", !!firebaseAuthModule);
+    }
     
     // Final status update
     updateFirebaseStatus();
