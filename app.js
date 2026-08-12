@@ -1326,6 +1326,17 @@ async function initializeApp() {
     // Update status immediately to show Firebase is loading
     updateFirebaseStatus();
     
+    // Emergency fallback: force local mode after 2 seconds if Firebase isn't ready
+    const emergencyFallback = new Promise(resolve => {
+        setTimeout(() => {
+            if (!auth || !firebaseAuthModule) {
+                console.warn("Emergency fallback: Firebase not ready, forcing local mode");
+                configured = false;
+            }
+            resolve();
+        }, 2000);
+    });
+    
     // Start Firebase initialization in the background (don't wait for it)
     const firebaseInit = initializeFirebase().catch(err => {
         console.error("Firebase init error:", err);
@@ -1336,8 +1347,8 @@ async function initializeApp() {
         updateFirebaseStatus();
     }, 500);
     
-    // Wait for Firebase initialization to complete (or timeout)
-    await firebaseInit;
+    // Wait for both Firebase initialization and emergency fallback
+    await Promise.race([firebaseInit, emergencyFallback]);
     clearInterval(statusInterval);
     
     // Final status update
