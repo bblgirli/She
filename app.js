@@ -97,7 +97,15 @@ async function initializeFirebase() {
     console.log(">>> initializeFirebase() STARTING");
     try {
         console.log("Firebase initialization started");
-        await initializeFirebaseCore();
+        // Set a 15-second maximum timeout for Firebase init
+        await Promise.race([
+            initializeFirebaseCore(),
+            new Promise((_, reject) => {
+                setTimeout(() => {
+                    reject(new Error("Firebase initialization timeout after 15 seconds"));
+                }, 15000);
+            })
+        ]);
         console.log("Firebase initialization completed");
         if (firebaseError) {
             console.error("Firebase Error Summary:", firebaseError);
@@ -1390,7 +1398,13 @@ async function initializeApp() {
         console.error("Firebase init error:", err);
     });
 
+    // Update status every 500ms while Firebase is initializing
+    const statusInterval = setInterval(() => {
+        updateFirebaseStatus();
+    }, 500);
+
     await firebaseInit;
+    clearInterval(statusInterval);
     updateFirebaseStatus();
 
     console.log("=== FIREBASE INITIALIZATION FINAL STATE ===");
