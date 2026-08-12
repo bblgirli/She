@@ -28,9 +28,12 @@ async function initializeFirebaseCore() {
     if (!configured || auth || db) return;
 
     try {
-        const appModule = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
-        const authModule = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
-        const firestoreModule = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        // Import all Firebase modules in parallel for faster loading
+        const [appModule, authModule, firestoreModule] = await Promise.all([
+            import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"),
+            import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"),
+            import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js")
+        ]);
 
         firebaseAuthModule = authModule;
         firebaseFirestoreModule = firestoreModule;
@@ -77,12 +80,12 @@ async function initializeFirebase() {
     try {
         await Promise.race([
             initializeFirebaseCore(),
-            new Promise((resolve, reject) => {
+            new Promise((resolve) => {
                 setTimeout(() => {
-                    console.warn("Firebase initialization timeout - using local mode");
+                    console.warn("Firebase initialization timeout (3s) - using local mode");
                     configured = false;
                     resolve();
-                }, 5000);
+                }, 3000);
             })
         ]);
     } catch (error) {
@@ -1320,23 +1323,38 @@ async function hydrateChatPage() {
 }
 
 async function initializeApp() {
-    await initializeFirebase();
+    // Update status immediately to show Firebase is loading
+    updateFirebaseStatus();
     
-    // Always update status display, regardless of Firebase initialization result
-    if (typeof updateFirebaseStatus === 'function') {
-        setTimeout(() => updateFirebaseStatus(), 100);
-    }
+    // Start Firebase initialization in the background (don't wait for it)
+    const firebaseInit = initializeFirebase().catch(err => {
+        console.error("Firebase init error:", err);
+    });
     
-    if (configured) {
-        await waitForAuthState();
-        
-        if (auth?.currentUser && isAuthPage()) {
-            redirectToChats();
-            return;
+    // Update status periodically while Firebase is initializing
+    const statusInterval = setInterval(() => {
+        updateFirebaseStatus();
+    }, 500);
+    
+    // Wait for Firebase initialization to complete (or timeout)
+    await firebaseInit;
+    clearInterval(statusInterval);
+    
+    // Final status update
+    updateFirebaseStatus();
+    
+    // Only wait for auth state if Firebase is actually configured
+    if (configured && auth && firebaseAuthModule) {
+        try {
+            await waitForAuthState();
+            
+            if (auth?.currentUser && isAuthPage()) {
+                redirectToChats();
+                return;
+            }
+        } catch (err) {
+            console.warn("Auth state check failed:", err);
         }
-    } else {
-        // Firebase not available, but allow local mode to proceed
-        console.log("Firebase not available - local mode enabled");
     }
 
     if (!requireAuth()) return;
