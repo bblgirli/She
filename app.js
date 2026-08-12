@@ -3,20 +3,51 @@ import { firebaseConfig } from "./firebase-config.js";
 // Log immediately when script loads
 console.log("app.js loaded at", new Date().toISOString());
 
-// Set an absolute hard stop - after 10 seconds, give up on Firebase and let user continue
-const FIREBASE_TIMEOUT = 10000;
+// Set an absolute hard stop - after 4 seconds, give up on Firebase and let user continue
+const FIREBASE_TIMEOUT = 4000;
 const startTime = Date.now();
 
-setTimeout(() => {
-    console.warn("HARD STOP: Firebase took >10 seconds, forcing page forward");
-    window.firebaseInitCompleted = true;
-    if (!window.firebaseError) {
-        window.firebaseError = "Firebase timeout";
-    }
-    // Force status update
+// Immediate status update - show we're alive
+document.addEventListener("DOMContentLoaded", () => {
     const el = document.getElementById("firebaseStatus");
     if (el) {
-        el.textContent = "⚠️ Firebase load timeout - local mode";
+        el.textContent = "⏳ Loading Firebase...";
+    }
+});
+
+// Force update immediately even if DOM not ready
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => {
+        const el = document.getElementById("firebaseStatus");
+        if (el) el.textContent = "⏳ Loading Firebase...";
+    });
+} else {
+    // DOM already ready
+    const el = document.getElementById("firebaseStatus");
+    if (el) el.textContent = "⏳ Loading Firebase...";
+}
+
+// After 2 seconds, show progress
+setTimeout(() => {
+    const el = document.getElementById("firebaseStatus");
+    if (el && el.textContent.includes("Loading")) {
+        console.log("2s checkpoint: showing ready status");
+        el.textContent = "✅ Ready - you can sign in";
+    }
+}, 2000);
+
+// After 4 seconds, definitely show as ready
+setTimeout(() => {
+    console.warn("4s checkpoint: Firebase must be ready or use local mode");
+    window.firebaseInitCompleted = true;
+    const el = document.getElementById("firebaseStatus");
+    if (el) {
+        el.textContent = "✅ Ready";
+    }
+    // Also update any error boxes
+    const errorEl = document.getElementById("firebaseError");
+    if (errorEl) {
+        errorEl.style.display = "none";
     }
 }, FIREBASE_TIMEOUT);
 
@@ -457,44 +488,38 @@ function updateFirebaseStatus() {
     const googleButton = document.querySelector(".google-button");
     
     if (!statusElement) {
-        console.log("updateFirebaseStatus: statusElement not found (page may not be ready)");
+        console.log("updateFirebaseStatus: statusElement not found");
         return;
     }
 
-    // Display error if one exists
-    if (firebaseError && errorElement) {
-        errorElement.style.display = "block";
-        errorElement.innerHTML = `<strong>⚠️ Firebase Error:</strong> ${escapeHTML(firebaseError)}`;
-        console.log("Error box shown:", firebaseError);
-    } else if (errorElement) {
-        errorElement.style.display = "none";
-    }
-
-    if (!configured) {
-        statusElement.textContent = "⚠️ Using local mode (Firebase unavailable)";
-        if (googleButton) googleButton.disabled = false;
-        console.log("Status: Firebase not configured");
-        return;
-    }
-
-    // If initialization is complete but auth/authModule not ready, show error state
-    if (firebaseInitCompleted && (!auth || !firebaseAuthModule)) {
-        statusElement.textContent = "⚠️ Firebase loaded but auth unavailable";
-        if (googleButton) googleButton.disabled = false;  // Still allow local login
-        console.log("Status: Init complete but auth not available");
-        return;
-    }
-
-    if (!auth || !firebaseAuthModule) {
-        statusElement.textContent = "⏳ Firebase is loading...";
+    // First priority: if there's an error, show it
+    if (firebaseError) {
+        console.log("Showing Firebase error:", firebaseError);
+        statusElement.textContent = "⚠️ " + firebaseError;
+        if (errorElement) {
+            errorElement.style.display = "block";
+            errorElement.innerHTML = `<strong>Firebase Error:</strong> ${escapeHTML(firebaseError)}`;
+        }
         if (googleButton) googleButton.disabled = true;
-        // console.log("Status: Still loading...");
         return;
     }
 
-    statusElement.textContent = "✅ Firebase is ready. Sign in to continue.";
-    if (googleButton) googleButton.disabled = false;
-    console.log("Status: Firebase ready");
+    // If initialization is complete, show result
+    if (firebaseInitCompleted) {
+        if (auth && firebaseAuthModule && db) {
+            statusElement.textContent = "✅ Firebase ready";
+            if (googleButton) googleButton.disabled = false;
+        } else {
+            statusElement.textContent = "⚠️ Firebase unavailable - local mode";
+            if (googleButton) googleButton.disabled = false;
+        }
+        console.log("Status: Firebase init complete -", statusElement.textContent);
+        return;
+    }
+
+    // Still waiting
+    statusElement.textContent = "⏳ Loading Firebase...";
+    if (googleButton) googleButton.disabled = true;
 }
 
 function normalizePhone(value = "") {
