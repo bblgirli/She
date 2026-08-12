@@ -24,7 +24,7 @@ let currentContactsSearch = "";
 let authStateResolved = false;
 let authStatePromiseResolve = null;
 
-async function initializeFirebase() {
+async function initializeFirebaseCore() {
     if (!configured || auth || db) return;
 
     try {
@@ -69,6 +69,24 @@ async function initializeFirebase() {
         }
     } catch (error) {
         console.warn("Firebase unavailable; falling back to local mode.", error);
+        configured = false;
+    }
+}
+
+async function initializeFirebase() {
+    try {
+        await Promise.race([
+            initializeFirebaseCore(),
+            new Promise((resolve, reject) => {
+                setTimeout(() => {
+                    console.warn("Firebase initialization timeout - using local mode");
+                    configured = false;
+                    resolve();
+                }, 5000);
+            })
+        ]);
+    } catch (error) {
+        console.warn("Firebase initialization failed:", error);
         configured = false;
     }
 }
@@ -358,8 +376,8 @@ function updateFirebaseStatus() {
     if (!statusElement || !googleButton) return;
 
     if (!configured) {
-        statusElement.textContent = "❌ Firebase is not configured. Please add your Firebase credentials to firebase-config.js";
-        googleButton.disabled = true;
+        statusElement.textContent = "⚠️ Using local mode (Firebase unavailable)";
+        googleButton.disabled = false;
         return;
     }
 
@@ -1304,6 +1322,11 @@ async function hydrateChatPage() {
 async function initializeApp() {
     await initializeFirebase();
     
+    // Always update status display, regardless of Firebase initialization result
+    if (typeof updateFirebaseStatus === 'function') {
+        setTimeout(() => updateFirebaseStatus(), 100);
+    }
+    
     if (configured) {
         await waitForAuthState();
         
@@ -1312,8 +1335,8 @@ async function initializeApp() {
             return;
         }
     } else {
-        showError("Firebase is required. Please configure Firebase in firebase-config.js");
-        return;
+        // Firebase not available, but allow local mode to proceed
+        console.log("Firebase not available - local mode enabled");
     }
 
     if (!requireAuth()) return;
