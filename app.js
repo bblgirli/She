@@ -1,16 +1,24 @@
 import { firebaseConfig } from "./firebase-config.js";
 
-// ABSOLUTE EMERGENCY: Set timeout at module level before anything else
-if (typeof document !== 'undefined') {
-    setTimeout(() => {
-        const el = document.getElementById("firebaseStatus");
-        if (el && el.textContent === "⏳ Checking Firebase status...") {
-            el.textContent = "⚠️ Firebase load timeout - local mode";
-            window.firebaseInitCompleted = true;
-            window.firebaseError = "Module load timeout";
-        }
-    }, 8000);
-}
+// Log immediately when script loads
+console.log("app.js loaded at", new Date().toISOString());
+
+// Set an absolute hard stop - after 10 seconds, give up on Firebase and let user continue
+const FIREBASE_TIMEOUT = 10000;
+const startTime = Date.now();
+
+setTimeout(() => {
+    console.warn("HARD STOP: Firebase took >10 seconds, forcing page forward");
+    window.firebaseInitCompleted = true;
+    if (!window.firebaseError) {
+        window.firebaseError = "Firebase timeout";
+    }
+    // Force status update
+    const el = document.getElementById("firebaseStatus");
+    if (el) {
+        el.textContent = "⚠️ Firebase load timeout - local mode";
+    }
+}, FIREBASE_TIMEOUT);
 
 const STORAGE_KEY = "she_app_state";
 const CURRENT_USER_KEY = "she_current_user";
@@ -1421,43 +1429,22 @@ async function initializeApp() {
     console.log("=== APP INITIALIZATION STARTED ===");
     updateFirebaseStatus();
 
-    console.log("Starting Firebase initialization");
-    const firebaseInit = initializeFirebase().catch(err => {
+    console.log("Starting Firebase initialization (non-blocking)");
+    // DO NOT AWAIT Firebase - let it initialize in the background
+    initializeFirebase().catch(err => {
         console.error("Firebase init error:", err);
+        updateFirebaseStatus();
     });
 
-    // Update status every 500ms while Firebase is initializing
-    const statusInterval = setInterval(() => {
-        updateFirebaseStatus();
-    }, 500);
-
-    await firebaseInit;
+    // Update status every 500ms
+    const statusInterval = setInterval(updateFirebaseStatus, 500);
+    
+    // Wait a bit for Firebase to start, but DON'T WAIT FOR IT TO COMPLETE
+    await new Promise(resolve => setTimeout(resolve, 500));
     clearInterval(statusInterval);
     updateFirebaseStatus();
-
-    console.log("=== FIREBASE INITIALIZATION FINAL STATE ===");
-    console.log("firebaseInitCompleted:", firebaseInitCompleted);
-    console.log("auth available:", !!auth);
-    console.log("firebaseAuthModule available:", !!firebaseAuthModule);
-    console.log("firebaseError:", firebaseError);
-    console.log("configured:", configured);
-
-    if (configured && auth && firebaseAuthModule) {
-        try {
-            console.log("Auth state available - waiting for auth state...");
-            await waitForAuthState();
-
-            if (auth?.currentUser && isAuthPage()) {
-                console.log("User logged in, redirecting to chats");
-                redirectToChats();
-                return;
-            }
-        } catch (err) {
-            console.warn("Auth state check failed:", err);
-        }
-    } else {
-        console.log("Firebase not ready - skipping auth state wait");
-    }
+    
+    console.log("Continuing app init - Firebase initializing in background");
 
     if (!requireAuth()) return;
 
@@ -1502,5 +1489,15 @@ async function initializeApp() {
 }
 
 initializeApp().catch(showError);
+
+// Check every second if user is logged in via Firebase and redirect
+if (typeof document !== 'undefined') {
+    setInterval(() => {
+        if (isAuthPage() && firebaseInitCompleted && auth && auth.currentUser) {
+            console.log("User logged in, redirecting to chats");
+            redirectToChats();
+        }
+    }, 1000);
+}
 
 Object.assign(window, { sendMessage, togglePassword, toggleLoginPassword, handleEnter, openChat, goBack, showEmoji, logout, forgotPassword, googleLogin, editProfileName, saveProfile, goTo, searchChats, searchContacts, searchCalls, openMenu, newChat, createGroup, createContact, startCall, startVideoCall, attachFile, openCamera, sendVoiceMessage, changeProfilePhoto, editAbout, addParticipant, leaveGroup, openPrivacy, openSecurity, openChatSettings, openNotifications, openStorage, openHelp, toggleDarkMode, addStatus, viewStatus });
