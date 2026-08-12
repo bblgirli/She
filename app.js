@@ -50,7 +50,10 @@ async function initializeFirebase() {
             }
         });
 
-        const redirectResult = await firebaseAuthModule.getRedirectResult(auth);
+        const redirectResult = await Promise.race([
+            firebaseAuthModule.getRedirectResult(auth),
+            new Promise((resolve) => setTimeout(() => resolve(null), 2000))
+        ]);
         if (redirectResult?.user) {
             const signedInUser = getFirebaseUserData(redirectResult.user);
             setCurrentUser(signedInUser);
@@ -229,9 +232,14 @@ function requireAuth() {
 
 function waitForAuthState() {
     if (!configured || authStateResolved) return Promise.resolve();
-    return new Promise((resolve) => {
-        authStatePromiseResolve = resolve;
-    });
+    return Promise.race([
+        new Promise((resolve) => {
+            authStatePromiseResolve = resolve;
+        }),
+        new Promise((resolve) => {
+            setTimeout(resolve, 3000); // 3 second timeout to prevent hanging
+        })
+    ]);
 }
 
 function forgotPassword() {
