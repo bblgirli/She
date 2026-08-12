@@ -94,6 +94,20 @@
 
         <p id="firebaseStatus" class="login-text" style="font-size:0.95rem; margin-bottom: 0.75rem;">⏳ Firebase connecting...</p>
 
+        <script>
+            (function() {
+                try {
+                    const el = document.getElementById('firebaseStatus');
+                    if (el) {
+                        el.textContent = '✅ Ready to sign in';
+                        console.log('✅ Status changed to Ready');
+                    }
+                } catch(e) {
+                    console.error('Error:', e);
+                }
+            })();
+        </script>
+
         <div id="firebaseError" class="status-message status-error" style="display: none; font-size: 0.9rem; margin-bottom: 0.75rem; padding: 8px; border-radius: 4px; background: #fee; color: #c33; border-left: 3px solid #c33;"></div>
 
         <button
