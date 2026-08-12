@@ -1,32 +1,5 @@
 import { firebaseConfig } from "./firebase-config.js";
 
-// EMERGENCY: Set an absolute hard timeout at module load time
-// This runs IMMEDIATELY before anything else and guarantees page progresses
-const EMERGENCY_TIMEOUT_MS = 2000;
-setTimeout(() => {
-    console.warn("EMERGENCY TIMEOUT: 2 seconds elapsed, forcing status update");
-    const statusEl = document.getElementById("firebaseStatus");
-    const errorEl = document.getElementById("firebaseError");
-    const googleBtn = document.querySelector(".google-button");
-    
-    if (statusEl) {
-        statusEl.textContent = "❌ Firebase unavailable - using local mode";
-    }
-    if (errorEl) {
-        errorEl.style.display = "block";
-        errorEl.innerHTML = "<strong>⚠️ Firebase Error:</strong> CDN timeout (2s) - app in local mode";
-    }
-    if (googleBtn) {
-        googleBtn.disabled = false;
-    }
-    
-    // Mark as timed out
-    if (typeof window !== 'undefined') {
-        window.firebaseInitCompleted = true;
-        window.firebaseError = "Firebase CDN timeout at module load";
-    }
-}, EMERGENCY_TIMEOUT_MS);
-
 const STORAGE_KEY = "she_app_state";
 const CURRENT_USER_KEY = "she_current_user";
 
@@ -58,39 +31,26 @@ async function initializeFirebaseCore() {
 
     try {
         console.log("Starting Firebase initialization...");
-        
-        // Import all Firebase modules in parallel with AGGRESSIVE timeout
         console.log("Importing Firebase modules from CDN...");
-        const importPromise = Promise.all([
+
+        const [appModule, authModule, firestoreModule] = await Promise.all([
             import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"),
             import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"),
             import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js")
         ]);
-        
-        // AGGRESSIVE: 2 second timeout for module imports
-        const importTimeout = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error("Firebase CDN unreachable - module import timeout (2s)")), 2000)
-        );
-        
-        const [appModule, authModule, firestoreModule] = await Promise.race([importPromise, importTimeout]);
-        console.log("Firebase modules imported successfully");
 
+        console.log("Firebase modules imported successfully");
         firebaseAuthModule = authModule;
         firebaseFirestoreModule = firestoreModule;
-        
+
         console.log("Initializing Firebase app...");
         firebaseApp = appModule.initializeApp(firebaseConfig);
         auth = authModule.getAuth(firebaseApp);
-        
+
         console.log("Setting persistence...");
-        const persistencePromise = firebaseAuthModule.setPersistence(auth, firebaseAuthModule.browserLocalPersistence);
-        // AGGRESSIVE: 1.5 second timeout for persistence
-        const persistenceTimeout = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error("Firebase persistence timeout (1.5s)")), 1500)
-        );
-        await Promise.race([persistencePromise, persistenceTimeout]);
+        await firebaseAuthModule.setPersistence(auth, firebaseAuthModule.browserLocalPersistence);
         console.log("Persistence set");
-        
+
         db = firestoreModule.getFirestore(firebaseApp);
         console.log("Firebase initialized successfully");
 
@@ -107,11 +67,8 @@ async function initializeFirebaseCore() {
         });
 
         console.log("Getting redirect result...");
-        const redirectResult = await Promise.race([
-            firebaseAuthModule.getRedirectResult(auth),
-            new Promise((resolve) => setTimeout(() => resolve(null), 2000))
-        ]);
-        
+        const redirectResult = await firebaseAuthModule.getRedirectResult(auth);
+
         if (redirectResult?.user) {
             console.log("Redirect result found:", redirectResult.user.uid);
             const signedInUser = getFirebaseUserData(redirectResult.user);
@@ -140,22 +97,8 @@ async function initializeFirebase() {
     console.log(">>> initializeFirebase() STARTING");
     try {
         console.log("Firebase initialization started");
-        
-        const result = await Promise.race([
-            initializeFirebaseCore(),
-            new Promise((resolve) => {
-                // AGGRESSIVE: 3 second timeout for entire initialization
-                setTimeout(() => {
-                    const timeoutMsg = "Firebase initialization timeout (3s) - CDN may be unreachable";
-                    console.warn(">>> TIMEOUT:", timeoutMsg);
-                    if (!firebaseError) {
-                        firebaseError = timeoutMsg;
-                    }
-                    resolve();
-                }, 3000);
-            })
-        ]);
-        console.log("Firebase initialization completed or timed out");
+        await initializeFirebaseCore();
+        console.log("Firebase initialization completed");
         if (firebaseError) {
             console.error("Firebase Error Summary:", firebaseError);
         }
@@ -165,11 +108,8 @@ async function initializeFirebase() {
         console.error(">>> CATCH Firebase initialization error:", error);
         console.error("Error message:", errorMsg);
     } finally {
-        // Mark initialization as complete IMMEDIATELY
         firebaseInitCompleted = true;
         console.log(">>> FINALLY: Firebase init flow complete. auth=" + !!auth + " module=" + !!firebaseAuthModule + " error=" + firebaseError);
-        
-        // Force status update immediately in finally block
         try {
             if (typeof updateFirebaseStatus === 'function') {
                 console.log(">>> Calling updateFirebaseStatus from finally block");
@@ -585,16 +525,10 @@ function messageStatusLabel(item) {
 async function updateMessageStatus(conversationId, messageId, newStatus) {
     if (!configured || !db || !firebaseFirestoreModule) return;
     try {
-        // Add 2-second timeout to prevent indefinite hang
-        await Promise.race([
-            firebaseFirestoreModule.updateDoc(
-                firebaseFirestoreModule.doc(db, "conversations", conversationId, "messages", messageId),
-                { status: newStatus }
-            ),
-            new Promise((_, reject) => 
-                setTimeout(() => reject(new Error("Message status update timeout")), 2000)
-            )
-        ]);
+        await firebaseFirestoreModule.updateDoc(
+            firebaseFirestoreModule.doc(db, "conversations", conversationId, "messages", messageId),
+            { status: newStatus }
+        );
     } catch (error) {
         console.warn("Could not update message status:", error);
     }
@@ -609,13 +543,7 @@ async function markConversationMessagesAsRead(conversationId, senderUid) {
             firebaseFirestoreModule.where("senderId", "==", senderUid),
             firebaseFirestoreModule.where("status", "!=", "read")
         );
-        // Add 2-second timeout to getDocs query
-        const snapshot = await Promise.race([
-            firebaseFirestoreModule.getDocs(q),
-            new Promise((_, reject) => 
-                setTimeout(() => reject(new Error("getDocs timeout")), 2000)
-            )
-        ]);
+        const snapshot = await firebaseFirestoreModule.getDocs(q);
         snapshot.docs.forEach((docItem) => {
             updateMessageStatus(conversationId, docItem.id, "read").catch(() => {});
         });
@@ -1445,9 +1373,9 @@ async function hydrateChatPage() {
             console.warn("Unable to load the chat recipient profile.", error);
         }
 
-        // Mark messages from recipient as read when opening the chat
+        // Mark messages from recipient as read when opening the chat, but do not block page load on it.
         const conversationId = getConversationId(getCurrentUser().uid || getCurrentUser().id, recipientUid);
-        await markConversationMessagesAsRead(conversationId, recipientUid).catch(() => {});
+        markConversationMessagesAsRead(conversationId, recipientUid).catch(() => {});
     }
 
     renderMessagesForConversation();
@@ -1455,95 +1383,28 @@ async function hydrateChatPage() {
 
 async function initializeApp() {
     console.log("=== APP INITIALIZATION STARTED ===");
-    
-    // LAYER 1: Update status immediately
-    console.log("LAYER 1: Showing initial loading status");
     updateFirebaseStatus();
-    
-    // LAYER 2: Start Firebase initialization
-    console.log("LAYER 2: Starting Firebase initialization");
+
+    console.log("Starting Firebase initialization");
     const firebaseInit = initializeFirebase().catch(err => {
         console.error("Firebase init error:", err);
     });
-    
-    // LAYER 3: Update status every 100ms (more frequent)
-    console.log("LAYER 3: Starting status interval (100ms)");
-    const statusInterval = setInterval(() => {
-        updateFirebaseStatus();
-        console.log("Status update tick:", "initialized=" + firebaseInitCompleted, "error=" + firebaseError);
-    }, 100);
-    
-    // LAYER 4: Independent timeout that FORCES completion at 2 seconds
-    console.log("LAYER 4: Setting first hard timeout at 2 seconds");
-    const firstForceTimeout = new Promise(resolve => {
-        setTimeout(() => {
-            console.warn("LAYER 4 TRIGGERED: 2 second hard timeout - forcing init complete");
-            firebaseInitCompleted = true;
-            if (!firebaseError) {
-                firebaseError = "Firebase CDN timeout - local mode enabled";
-            }
-            // Force DOM update directly
-            const statusEl = document.getElementById("firebaseStatus");
-            if (statusEl) {
-                statusEl.textContent = "⚠️ Firebase CDN timeout (2s)";
-            }
-            resolve();
-        }, 2000);
-    });
-    
-    // LAYER 5: ABSOLUTE HARD STOP at 3 seconds
-    console.log("LAYER 5: Setting absolute hard stop at 3 seconds");
-    const absoluteStop = new Promise(resolve => {
-        setTimeout(() => {
-            console.warn("LAYER 5 TRIGGERED: 3 second ABSOLUTE HARD STOP");
-            firebaseInitCompleted = true;
-            if (!firebaseError) {
-                firebaseError = "Firebase initialization failed - timeout";
-            }
-            // FORCE DOM update
-            const statusEl = document.getElementById("firebaseStatus");
-            if (statusEl) {
-                statusEl.innerHTML = "❌ Firebase unavailable - using local mode";
-            }
-            const errorEl = document.getElementById("firebaseError");
-            if (errorEl) {
-                errorEl.style.display = "block";
-                errorEl.innerHTML = "<strong>⚠️ Firebase Error:</strong> CDN timeout - app will work in local mode";
-            }
-            const googleBtn = document.querySelector(".google-button");
-            if (googleBtn) {
-                googleBtn.disabled = false;
-            }
-            resolve();
-        }, 3000);
-    });
-    
-    // Wait for whichever completes first
-    console.log("LAYER 6: Waiting for initialization to complete");
-    await Promise.race([firebaseInit, firstForceTimeout, absoluteStop]);
-    
-    // Stop status updates
-    console.log("LAYER 7: Clearing status interval");
-    clearInterval(statusInterval);
-    
-    // LAYER 8: FINAL guaranteed status update
-    console.log("LAYER 8: Final status update - initialized=" + firebaseInitCompleted + ", error=" + firebaseError);
+
+    await firebaseInit;
     updateFirebaseStatus();
-    
-    // Log final state
+
     console.log("=== FIREBASE INITIALIZATION FINAL STATE ===");
     console.log("firebaseInitCompleted:", firebaseInitCompleted);
     console.log("auth available:", !!auth);
     console.log("firebaseAuthModule available:", !!firebaseAuthModule);
     console.log("firebaseError:", firebaseError);
     console.log("configured:", configured);
-    
-    // Only wait for auth state if Firebase is actually ready
+
     if (configured && auth && firebaseAuthModule) {
         try {
             console.log("Auth state available - waiting for auth state...");
             await waitForAuthState();
-            
+
             if (auth?.currentUser && isAuthPage()) {
                 console.log("User logged in, redirecting to chats");
                 redirectToChats();
@@ -1554,23 +1415,6 @@ async function initializeApp() {
         }
     } else {
         console.log("Firebase not ready - skipping auth state wait");
-    }
-    
-    // Final status update
-    updateFirebaseStatus();
-    
-    // Only wait for auth state if Firebase is actually configured
-    if (configured && auth && firebaseAuthModule) {
-        try {
-            await waitForAuthState();
-            
-            if (auth?.currentUser && isAuthPage()) {
-                redirectToChats();
-                return;
-            }
-        } catch (err) {
-            console.warn("Auth state check failed:", err);
-        }
     }
 
     if (!requireAuth()) return;
@@ -1591,16 +1435,7 @@ async function initializeApp() {
     updateFirebaseStatus();
 
     if (document.getElementById("messages")) {
-        // Wrap hydrateChatPage with 3-second timeout to prevent indefinite blocking
-        await Promise.race([
-            hydrateChatPage(),
-            new Promise(resolve => setTimeout(() => {
-                console.warn("hydrateChatPage timeout - continuing app initialization");
-                resolve();
-            }, 3000))
-        ]).catch(err => {
-            console.warn("hydrateChatPage failed:", err);
-        });
+        await hydrateChatPage();
     }
 
     if (document.getElementById("chatList") || document.querySelector(".chat-list")) {
