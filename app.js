@@ -420,11 +420,9 @@ function saveLocalMessages(key, messages) {
 
 function messageStatusLabel(item) {
     if (!item) return "";
-    const isSender = item.senderId === getCurrentUser()?.uid || item.senderId === getCurrentUser()?.id;
-    if (isSender) {
-        return item.status ? item.status : "Sent";
-    }
-    return item.status ? item.status : "Received";
+    const currentUserId = getCurrentUser()?.uid || getCurrentUser()?.id;
+    const isSender = item.senderId === currentUserId;
+    return isSender ? "Sent" : "Received";
 }
 
 function renderLocalMessages() {
@@ -582,32 +580,50 @@ async function sendMessage() {
     const text = input.value.trim();
     if (!text) return;
 
-    if (configured && db && auth && firebaseFirestoreModule) {
-        try {
-            const recipientUid = localStorage.getItem("currentChatUid") || "";
-            const conversationId = getConversationId(user.uid || user.id, recipientUid);
-            await firebaseFirestoreModule.setDoc(firebaseFirestoreModule.doc(db, "conversations", conversationId), {
-                participants: [user.uid || user.id, recipientUid].filter(Boolean),
+    if (!configured || !db || !auth || !firebaseFirestoreModule) {
+        showError("Firebase is required to send messages. Please sign in with your Firebase account.");
+        return;
+    }
+
+    try {
+        const senderId = user.uid || user.id;
+        const receiverId = localStorage.getItem("currentChatUid") || "";
+        
+        if (!receiverId) {
+            showError("No recipient selected. Please select a contact to message.");
+            return;
+        }
+
+        const conversationId = getConversationId(senderId, receiverId);
+        
+        // Update conversation metadata
+        await firebaseFirestoreModule.setDoc(
+            firebaseFirestoreModule.doc(db, "conversations", conversationId),
+            {
+                participants: [senderId, receiverId],
                 updatedAt: firebaseFirestoreModule.serverTimestamp(),
                 lastMessage: text,
                 lastMessageAt: firebaseFirestoreModule.serverTimestamp()
-            }, { merge: true });
-            await firebaseFirestoreModule.addDoc(firebaseFirestoreModule.collection(db, "conversations", conversationId, "messages"), {
+            },
+            { merge: true }
+        );
+        
+        // Add message with senderId, receiverId, text, and createdAt
+        await firebaseFirestoreModule.addDoc(
+            firebaseFirestoreModule.collection(db, "conversations", conversationId, "messages"),
+            {
+                senderId,
+                receiverId,
                 text,
-                senderId: user.uid || user.id,
-                status: "Sent",
                 createdAt: firebaseFirestoreModule.serverTimestamp()
-            });
-            input.value = "";
-            return;
-        } catch (error) {
-            showError(error);
-            return;
-        }
+            }
+        );
+        
+        input.value = "";
+        input.focus();
+    } catch (error) {
+        showError(error);
     }
-
-    // Firebase is required - local messages not supported
-    showError("Firebase is required to send messages. Please sign in with your Firebase account.");
 }
 
 function formatTime(timestamp) {
