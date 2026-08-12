@@ -23,6 +23,7 @@ let contactsCache = [];
 let currentContactsSearch = "";
 let authStateResolved = false;
 let authStatePromiseResolve = null;
+let firebaseError = null;
 
 async function initializeFirebaseCore() {
     if (!configured || auth || db) return;
@@ -86,7 +87,10 @@ async function initializeFirebaseCore() {
             }
         }
     } catch (error) {
+        const errorMsg = error?.message || error?.toString() || "Unknown error";
+        firebaseError = errorMsg;
         console.error("Firebase initialization error:", error);
+        console.error("Error message:", errorMsg);
         console.warn("Firebase unavailable; falling back to local mode.", error);
         configured = false;
     }
@@ -99,14 +103,24 @@ async function initializeFirebase() {
             initializeFirebaseCore(),
             new Promise((resolve) => {
                 setTimeout(() => {
-                    console.warn("Firebase initialization timeout (10s) - continuing with current state");
+                    const timeoutMsg = "Firebase initialization timeout (10s) - continuing with current state";
+                    console.warn(timeoutMsg);
+                    if (!firebaseError) {
+                        firebaseError = timeoutMsg;
+                    }
                     resolve();
                 }, 10000);
             })
         ]);
         console.log("Firebase initialization completed or timed out");
+        if (firebaseError) {
+            console.error("Firebase Error Summary:", firebaseError);
+        }
     } catch (error) {
+        const errorMsg = error?.message || error?.toString() || "Unknown error";
+        firebaseError = errorMsg;
         console.error("Firebase initialization error:", error);
+        console.error("Error message:", errorMsg);
     }
 }
 
@@ -398,23 +412,32 @@ function isFirebaseReady() {
 
 function updateFirebaseStatus() {
     const statusElement = document.getElementById("firebaseStatus");
+    const errorElement = document.getElementById("firebaseError");
     const googleButton = document.querySelector(".google-button");
-    if (!statusElement || !googleButton) return;
+    if (!statusElement) return;
+
+    // Display error if one exists
+    if (firebaseError && errorElement) {
+        errorElement.style.display = "block";
+        errorElement.innerHTML = `<strong>⚠️ Firebase Error:</strong> ${escapeHTML(firebaseError)}`;
+    } else if (errorElement) {
+        errorElement.style.display = "none";
+    }
 
     if (!configured) {
         statusElement.textContent = "⚠️ Using local mode (Firebase unavailable)";
-        googleButton.disabled = false;
+        if (googleButton) googleButton.disabled = false;
         return;
     }
 
     if (!auth || !firebaseAuthModule) {
         statusElement.textContent = "⏳ Firebase is loading...";
-        googleButton.disabled = true;
+        if (googleButton) googleButton.disabled = true;
         return;
     }
 
     statusElement.textContent = "✅ Firebase is ready. Sign in to continue.";
-    googleButton.disabled = false;
+    if (googleButton) googleButton.disabled = false;
 }
 
 function normalizePhone(value = "") {
