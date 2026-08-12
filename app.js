@@ -32,16 +32,17 @@ async function initializeFirebaseCore() {
     try {
         console.log("Starting Firebase initialization...");
         
-        // Import all Firebase modules in parallel with timeout
-        console.log("Importing Firebase modules...");
+        // Import all Firebase modules in parallel with AGGRESSIVE timeout
+        console.log("Importing Firebase modules from CDN...");
         const importPromise = Promise.all([
             import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"),
             import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"),
             import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js")
         ]);
         
+        // AGGRESSIVE: 2 second timeout for module imports
         const importTimeout = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error("Firebase module import timeout (3s)")), 3000)
+            setTimeout(() => reject(new Error("Firebase CDN unreachable - module import timeout (2s)")), 2000)
         );
         
         const [appModule, authModule, firestoreModule] = await Promise.race([importPromise, importTimeout]);
@@ -56,8 +57,9 @@ async function initializeFirebaseCore() {
         
         console.log("Setting persistence...");
         const persistencePromise = firebaseAuthModule.setPersistence(auth, firebaseAuthModule.browserLocalPersistence);
+        // AGGRESSIVE: 1.5 second timeout for persistence
         const persistenceTimeout = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error("Firebase persistence timeout (2s)")), 2000)
+            setTimeout(() => reject(new Error("Firebase persistence timeout (1.5s)")), 1500)
         );
         await Promise.race([persistencePromise, persistenceTimeout]);
         console.log("Persistence set");
@@ -113,14 +115,15 @@ async function initializeFirebase() {
         await Promise.race([
             initializeFirebaseCore(),
             new Promise((resolve) => {
+                // AGGRESSIVE: 3 second timeout for entire initialization
                 setTimeout(() => {
-                    const timeoutMsg = "Firebase initialization timeout (5s) - continuing with current state";
+                    const timeoutMsg = "Firebase initialization timeout (3s) - CDN may be unreachable";
                     console.warn(timeoutMsg);
                     if (!firebaseError) {
                         firebaseError = timeoutMsg;
                     }
                     resolve();
-                }, 5000);
+                }, 3000);
             })
         ]);
         console.log("Firebase initialization completed or timed out");
@@ -133,9 +136,14 @@ async function initializeFirebase() {
         console.error("Firebase initialization error:", error);
         console.error("Error message:", errorMsg);
     } finally {
-        // Mark initialization as complete regardless of success or failure
+        // Mark initialization as complete IMMEDIATELY
         firebaseInitCompleted = true;
         console.log("Firebase initialization flow completed (auth available:", !!auth, "firebaseAuthModule available:", !!firebaseAuthModule, ")");
+        
+        // Force status update immediately
+        if (typeof updateFirebaseStatus === 'function') {
+            updateFirebaseStatus();
+        }
     }
 }
 
@@ -308,9 +316,9 @@ function waitForAuthState() {
         }),
         new Promise((resolve) => {
             setTimeout(() => {
-                console.log("Auth state timeout after 3 seconds");
+                console.log("Auth state timeout after 1 second");
                 resolve();
-            }, 3000);
+            }, 1000);  // Reduced from 3000ms to 1000ms
         })
     ]);
 }
@@ -1399,17 +1407,29 @@ async function initializeApp() {
         console.error("Firebase init error:", err);
     });
     
-    // Update status frequently while Firebase is initializing (every 200ms instead of 300ms)
+    // Update status frequently while Firebase is initializing
     const statusInterval = setInterval(() => {
         updateFirebaseStatus();
-    }, 200);
+    }, 150);  // Every 150ms for very responsive feedback
     
-    // Wait for Firebase initialization (will complete within 5 seconds max due to timeout)
-    await firebaseInit;
+    // HARD STOP: Force completion after 3.5 seconds MAX (gives 3s timeout + 0.5s buffer)
+    const hardStop = new Promise(resolve => {
+        setTimeout(() => {
+            console.warn("HARD STOP: Firebase initialization taking too long - forcing completion");
+            firebaseInitCompleted = true;
+            if (!firebaseError) {
+                firebaseError = "Firebase initialization exceeded time limit";
+            }
+            resolve();
+        }, 3500);
+    });
+    
+    // Wait for Firebase initialization or hard stop, whichever comes first
+    await Promise.race([firebaseInit, hardStop]);
     clearInterval(statusInterval);
     
-    // CRITICAL: Final status update to ensure message changes if init timed out
-    console.log("Final status update: initialized=", firebaseInitCompleted, "auth=", !!auth, "module=", !!firebaseAuthModule, "error=", firebaseError);
+    // CRITICAL: Force final status update immediately
+    console.log("Final status update (after init or hard stop): initialized=", firebaseInitCompleted, "auth=", !!auth, "module=", !!firebaseAuthModule, "error=", firebaseError);
     updateFirebaseStatus();
     
     // Only wait for auth state if Firebase is actually configured and initialized
