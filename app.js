@@ -761,7 +761,11 @@ async function handleSignup(event) {
 
 async function handleLogin(event) {
     event.preventDefault();
+    clearStatus();
+    
+    showError("Initializing..."); // Show feedback
     await initializeFirebase();
+    
     ensureAccountSeed();
     const loginValue = document.getElementById("loginEmail").value.trim().toLowerCase();
     const password = document.getElementById("loginPassword").value;
@@ -774,6 +778,7 @@ async function handleLogin(event) {
 
     if (configured && auth && firebaseAuthModule) {
         try {
+            showError("Signing in with Firebase...");
             const result = await firebaseAuthModule.signInWithEmailAndPassword(auth, loginValue, password);
             const signedInUser = getFirebaseUserData(result.user);
             setCurrentUser(signedInUser);
@@ -781,11 +786,13 @@ async function handleLogin(event) {
             redirectToChats();
             return;
         } catch (error) {
-            showError(error);
-            return;
+            console.error("Firebase login error:", error);
+            // Fall back to local login
+            showError("Firebase unavailable - trying local login...");
         }
     }
 
+    // Fall back to local login
     const state = readState();
     const account = state.accounts.find((entry) => entry.email.toLowerCase() === loginValue && entry.password === password);
     if (account) {
@@ -918,8 +925,30 @@ function logout() {
     }
 }
 async function googleLogin() {
-    if (!configured || !auth || !firebaseAuthModule) {
-        showError("Firebase Google sign-in is unavailable. Check your Firebase configuration.");
+    showError(""); // Clear any previous errors
+    
+    if (!configured) {
+        showError("Firebase is not configured.");
+        return;
+    }
+    
+    // Wait for Firebase to initialize
+    if (!firebaseInitCompleted) {
+        showError("Waiting for Firebase to connect...");
+        await new Promise(resolve => {
+            const checkInterval = setInterval(() => {
+                if (firebaseInitCompleted || auth || firebaseAuthModule) {
+                    clearInterval(checkInterval);
+                    resolve();
+                }
+            }, 100);
+            // Maximum 10 second wait
+            setTimeout(() => { clearInterval(checkInterval); resolve(); }, 10000);
+        });
+    }
+
+    if (!auth || !firebaseAuthModule) {
+        showError("Firebase Google sign-in is unavailable. Using local mode.");
         return;
     }
 
