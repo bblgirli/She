@@ -799,17 +799,22 @@ async function handleLogin(event) {
             redirectToChats();
             return;
         } catch (error) {
-            window.showDebug("❌ Firebase login error: " + error.code + " - " + error.message);
+            const firebaseMessage = error?.message || "Unknown Firebase auth error";
+            window.showDebug("❌ Firebase login error: " + (error?.code || "unknown") + " - " + firebaseMessage);
             console.error("Firebase login error:", error);
-            showError("Firebase login failed: " + error.message + " - Trying local login...");
+            showError("Firebase sign-in failed: " + firebaseMessage);
+            return;
         }
-    } else {
-        window.showDebug("⚠️ Firebase not ready - using local login");
-        window.showDebug("   configured=" + configured + ", auth=" + !!auth + ", module=" + !!firebaseAuthModule);
-        showError("Firebase not ready - using local login...");
     }
 
-    // Fall back to local login
+    if (configured) {
+        window.showDebug("⚠️ Firebase config exists but auth is not initialized");
+        window.showDebug("   configured=" + configured + ", auth=" + !!auth + ", module=" + !!firebaseAuthModule);
+        showError("Firebase auth is not available right now. Please refresh and try again.");
+        return;
+    }
+
+    // Fallback only if Firebase is intentionally not configured.
     window.showDebug("🔥 Attempting local login");
     const state = readState();
     const account = state.accounts.find((entry) => entry.email.toLowerCase() === loginValue && entry.password === password);
@@ -976,7 +981,7 @@ async function googleLogin() {
 
     if (!auth || !firebaseAuthModule) {
         window.showDebug("❌ Firebase modules not ready for Google login");
-        showError("Firebase Google sign-in is unavailable. Using local mode.");
+        showError("Firebase Google sign-in is unavailable. Please refresh and try again.");
         return;
     }
 
@@ -987,9 +992,10 @@ async function googleLogin() {
         await firebaseAuthModule.signInWithRedirect(auth, provider);
         window.showDebug("✅ Google redirect initiated");
     } catch (error) {
-        window.showDebug("❌ Google login error: " + error.code + " - " + error.message);
+        const googleMessage = error?.message || "Unknown Google sign-in error";
+        window.showDebug("❌ Google login error: " + (error?.code || "unknown") + " - " + googleMessage);
         console.error("Google login error:", error);
-        showError("Google sign-in failed: " + error.message);
+        showError("Google sign-in failed: " + googleMessage);
     }
 }
 function editProfileName() { window.location.href = "edit-profile.html"; }
