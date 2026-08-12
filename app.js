@@ -585,20 +585,27 @@ function messageStatusLabel(item) {
     return item.status ? item.status : "Received";
 }
 
+function firestoreIsReady() {
+    return Boolean(configured && auth && db && firebaseFirestoreModule);
+}
+
 async function updateMessageStatus(conversationId, messageId, newStatus) {
-    if (!configured || !db || !firebaseFirestoreModule) return;
+    if (!firestoreIsReady() || !conversationId || !messageId) return;
     try {
-        await firebaseFirestoreModule.updateDoc(
-            firebaseFirestoreModule.doc(db, "conversations", conversationId, "messages", messageId),
-            { status: newStatus }
-        );
+        await Promise.race([
+            firebaseFirestoreModule.updateDoc(
+                firebaseFirestoreModule.doc(db, "conversations", conversationId, "messages", messageId),
+                { status: newStatus }
+            ),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("Message status update timed out")), 2000))
+        ]);
     } catch (error) {
         console.warn("Could not update message status:", error);
     }
 }
 
 async function markConversationMessagesAsRead(conversationId, senderUid) {
-    if (!configured || !db || !firebaseFirestoreModule) return;
+    if (!firestoreIsReady() || !conversationId || !senderUid) return;
     try {
         const messagesRef = firebaseFirestoreModule.collection(db, "conversations", conversationId, "messages");
         const q = firebaseFirestoreModule.query(
@@ -606,7 +613,10 @@ async function markConversationMessagesAsRead(conversationId, senderUid) {
             firebaseFirestoreModule.where("senderId", "==", senderUid),
             firebaseFirestoreModule.where("status", "!=", "read")
         );
-        const snapshot = await firebaseFirestoreModule.getDocs(q);
+        const snapshot = await Promise.race([
+            firebaseFirestoreModule.getDocs(q),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("Mark messages read timed out")), 2000))
+        ]);
         snapshot.docs.forEach((docItem) => {
             updateMessageStatus(conversationId, docItem.id, "read").catch(() => {});
         });
