@@ -451,6 +451,13 @@ function renderLocalMessages() {
 
 async function saveUserProfile(user, data = {}) {
     await initializeFirebase();
+    
+    // Ensure user and uid are valid before proceeding
+    if (!user || !user.uid) {
+        console.error("Cannot save user profile: user or user.uid is missing.");
+        return;
+    }
+    
     const phone = normalizePhone(data.phone || "");
     const usernameValue = data.username || (data.displayName ? data.displayName.replace(/\s+/g, "").toLowerCase() : user.email ? user.email.split("@")[0] : "");
     const profileRef = firebaseFirestoreModule ? firebaseFirestoreModule.doc(db, "users", user.uid) : null;
@@ -485,7 +492,7 @@ async function saveUserProfile(user, data = {}) {
         profileData.createdAt = createdAt;
     }
 
-    if (configured && db && auth && firebaseFirestoreModule) {
+    if (configured && db && auth && firebaseFirestoreModule && profileRef) {
         await firebaseFirestoreModule.setDoc(profileRef, profileData, { merge: true });
         return;
     }
