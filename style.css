@@ -578,6 +578,26 @@ button {
     margin-left: auto;
 }
 
+/* STATUS TICKS */
+.status-ticks {
+    font-size: 9px;
+    margin-left: 4px;
+    letter-spacing: -1px;
+    font-weight: bold;
+}
+
+.status-ticks.sent {
+    color: #999;
+}
+
+.status-ticks.delivered {
+    color: #999;
+}
+
+.status-ticks.read {
+    color: #0084ff;
+}
+
 
 /* MESSAGE INPUT */
 

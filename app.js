@@ -418,6 +418,13 @@ function saveLocalMessages(key, messages) {
     writeState(state);
 }
 
+function getStatusTicks(status = "") {
+    const normalizedStatus = (status || "").toLowerCase().trim();
+    if (normalizedStatus === "read") return "<span class='status-ticks read'>✓✓</span>";
+    if (normalizedStatus === "delivered") return "<span class='status-ticks delivered'>✓✓</span>";
+    return "<span class='status-ticks sent'>✓</span>";
+}
+
 function messageStatusLabel(item) {
     if (!item) return "";
     const isSender = item.senderId === getCurrentUser()?.uid || item.senderId === getCurrentUser()?.id;
@@ -425,6 +432,36 @@ function messageStatusLabel(item) {
         return item.status ? item.status : "Sent";
     }
     return item.status ? item.status : "Received";
+}
+
+async function updateMessageStatus(conversationId, messageId, newStatus) {
+    if (!configured || !db || !firebaseFirestoreModule) return;
+    try {
+        await firebaseFirestoreModule.updateDoc(
+            firebaseFirestoreModule.doc(db, "conversations", conversationId, "messages", messageId),
+            { status: newStatus }
+        );
+    } catch (error) {
+        console.warn("Could not update message status:", error);
+    }
+}
+
+async function markConversationMessagesAsRead(conversationId, senderUid) {
+    if (!configured || !db || !firebaseFirestoreModule) return;
+    try {
+        const messagesRef = firebaseFirestoreModule.collection(db, "conversations", conversationId, "messages");
+        const q = firebaseFirestoreModule.query(
+            messagesRef,
+            firebaseFirestoreModule.where("senderId", "==", senderUid),
+            firebaseFirestoreModule.where("status", "!=", "read")
+        );
+        const snapshot = await firebaseFirestoreModule.getDocs(q);
+        snapshot.docs.forEach((docItem) => {
+            updateMessageStatus(conversationId, docItem.id, "read").catch(() => {});
+        });
+    } catch (error) {
+        console.warn("Could not mark messages as read:", error);
+    }
 }
 
 function renderLocalMessages() {
@@ -442,9 +479,7 @@ function renderLocalMessages() {
     }
     items.forEach((item) => {
         const wrapper = document.createElement("div");
-        wrapper.className = `message ${item.senderId === getCurrentUser()?.id || item.senderId === getCurrentUser()?.uid ? "sent" : "received"}`;
-        wrapper.innerHTML = `<p>${escapeHTML(item.text)}</p><span>${formatTime(item.createdAt)} • ${escapeHTML(messageStatusLabel(item))}</span>`;
-        messages.appendChild(wrapper);
+        wrapper.className = `message ${item.senderId === getCurrentUser()?.id || item.senderId === getCurrentUser()?.uid ? "sent" : "received"}`;\n        const isSender = item.senderId === getCurrentUser()?.id || item.senderId === getCurrentUser()?.uid;\n        const statusContent = isSender ? getStatusTicks(item.status) : \"\";\n        wrapper.innerHTML = `<p>${escapeHTML(item.text)}</p><span>${formatTime(item.createdAt)}${statusContent ? \" • \" + statusContent : \"\"}</span>`;\n        messages.appendChild(wrapper);
     });
     messages.scrollTop = messages.scrollHeight;
 }
@@ -1189,11 +1224,11 @@ function renderMessagesForConversation() {
                 return;
             }
             items.forEach((item) => {
-                const wrapper = document.createElement("div");
-                wrapper.className = `message ${item.senderId === (currentUser.uid || currentUser.id) ? "sent" : "received"}`;
-                wrapper.innerHTML = `<p>${escapeHTML(item.text)}</p><span>${formatTime(item.createdAt)} • ${escapeHTML(messageStatusLabel(item))}</span>`;
-                messagesContainer.appendChild(wrapper);
-            });
+                const isSender = item.senderId === (currentUser.uid || currentUser.id);\n                const wrapper = document.createElement("div");
+                wrapper.className = `message ${isSender ? "sent" : "received"}`;
+                const statusContent = isSender ? getStatusTicks(item.status) : "";\n                wrapper.innerHTML = `<p>${escapeHTML(item.text)}</p><span>${formatTime(item.createdAt)}${statusContent ? " • " + statusContent : ""}</span>`;\n                messagesContainer.appendChild(wrapper);
+                
+                // Mark received messages as delivered\n                if (!isSender && item.status !== "delivered" && item.status !== "read") {\n                    updateMessageStatus(conversationId, item.id, "delivered").catch(() => {});\n                }\n            });
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         });
         return;
@@ -1249,6 +1284,10 @@ async function hydrateChatPage() {
         } catch (error) {
             console.warn("Unable to load the chat recipient profile.", error);
         }
+
+        // Mark messages from recipient as read when opening the chat
+        const conversationId = getConversationId(getCurrentUser().uid || getCurrentUser().id, recipientUid);
+        await markConversationMessagesAsRead(conversationId, recipientUid).catch(() => {});
     }
 
     renderMessagesForConversation();
