@@ -677,7 +677,32 @@ function togglePassword(id = "password") {
 
 function toggleLoginPassword() { togglePassword("loginPassword"); }
 function handleEnter(event) { if (event.key === "Enter") { event.preventDefault(); sendMessage(); } }
+function escapeAttribute(value = "") {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+}
+
+function buildOpenChatClick(name = "", uid = "") {
+    return `data-name="${escapeAttribute(name)}" data-uid="${escapeAttribute(uid)}"`;
+}
+
+function bindOpenChatEvents(container) {
+    if (!container) return;
+    const items = container.querySelectorAll(".contact-item, .chat-item");
+    items.forEach((item) => {
+        item.addEventListener("click", () => {
+            const name = item.getAttribute("data-name") || "";
+            const uid = item.getAttribute("data-uid") || "";
+            openChat(name, uid);
+        });
+    });
+}
+
 function openChat(name, uid = "") {
+    console.log("openChat debug", { name, uid });
     const params = new URLSearchParams();
     if (uid) params.set("uid", uid);
     if (name) params.set("name", name);
@@ -810,7 +835,7 @@ async function renderContactsResults() {
                 ? `<img class="avatar-photo" src="${escapeHTML(photoURL)}" alt="${escapeHTML(name)}">`
                 : "👤";
             return `
-                <div class="contact-item" onclick="openChat(${JSON.stringify(name)}, ${JSON.stringify(uid)})">
+                <div class="contact-item" ${buildOpenChatClick(name, uid)}>
                     <div class="avatar">${avatarMarkup}</div>
                     <div class="contact-details">
                         <h3>${escapeHTML(name)}</h3>
@@ -819,6 +844,7 @@ async function renderContactsResults() {
                 </div>
             `;
         }).join("");
+        bindOpenChatEvents(resultsContainer);
         return;
     }
 
@@ -846,7 +872,7 @@ async function renderContactsResults() {
     }
 
     resultsContainer.innerHTML = filtered.map((contact) => `
-        <div class="contact-item" onclick="openChat('${escapeHTML(contact.name)}', '${escapeHTML(contact.uid)}')">
+        <div class="contact-item" ${buildOpenChatClick(contact.name, contact.uid)}>
             <div class="avatar">👤</div>
             <div class="contact-details">
                 <h3>${escapeHTML(contact.name)}</h3>
@@ -854,6 +880,7 @@ async function renderContactsResults() {
             </div>
         </div>
     `).join("");
+    bindOpenChatEvents(resultsContainer);
 }
 
 function searchCalls() { alert("Calls are managed through your connected contacts."); }
@@ -1037,7 +1064,7 @@ async function renderChatList() {
                 const preview = conversation.lastMessage || "Start the conversation";
                 const time = conversation.lastMessageAt?.toDate ? formatTime(conversation.lastMessageAt) : "Now";
                 return `
-                    <div class="chat-item" onclick="openChat('${escapeHTML(name)}', '${otherUid || ""}')">
+                    <div class="chat-item" ${buildOpenChatClick(name, otherUid || "")}>
                         <div class="avatar">👤</div>
                         <div class="chat-details">
                             <div class="chat-top">
@@ -1053,6 +1080,7 @@ async function renderChatList() {
             }));
 
             container.innerHTML = items.join("") || '<div class="message received"><p>No conversations yet. Open a real contact to start chatting.</p></div>';
+            bindOpenChatEvents(container);
         });
         return;
     }
@@ -1077,7 +1105,7 @@ async function renderChatList() {
         const preview = lastMessage ? lastMessage.text : "Tap to chat";
         const time = lastMessage ? formatTime(lastMessage.createdAt) : "Now";
         return `
-            <div class="chat-item" onclick="openChat('${escapeHTML(name)}', '${escapeHTML(uid)}')">
+            <div class="chat-item" ${buildOpenChatClick(name, uid)}>
                 <div class="avatar">👤</div>
                 <div class="chat-details">
                     <div class="chat-top">
@@ -1181,6 +1209,7 @@ async function hydrateChatPage() {
     const params = new URLSearchParams(window.location.search);
     const recipientUid = params.get("uid") || localStorage.getItem("currentChatUid") || "";
     const currentName = params.get("name") || localStorage.getItem("currentChat") || "Chat";
+    console.log("hydrateChatPage debug", { recipientUid, currentName, search: window.location.search });
 
     if (recipientUid) {
         localStorage.setItem("currentChatUid", recipientUid);
