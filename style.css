@@ -798,6 +798,27 @@ button {
     }
 }
 
+.pitch-level {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 24px;
+}
+
+.pitch-bar {
+    width: 3px;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.4);
+    border-radius: 2px;
+    transition: height 0.05s ease-out;
+}
+
+.pitch-bar.active {
+    height: 20px;
+    background: white;
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
+}
+
 .lock-recording-btn {
     width: 32px;
     height: 32px;

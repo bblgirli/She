@@ -30,6 +30,12 @@ let recordingLocked = false;
 let recordingStartTime = null;
 let recordingTimerInterval = null;
 
+// Audio analysis for pitch level
+let audioContext = null;
+let analyser = null;
+let dataArray = null;
+let animationId = null;
+
 // ============================================
 // FIREBASE INITIALIZATION
 // ============================================
@@ -193,6 +199,16 @@ async function startVoiceRecording() {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true } });
         
+        // Set up audio context for pitch analysis
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        
+        const source = audioContext.createMediaStreamSource(stream);
+        source.connect(analyser);
+        
+        dataArray = new Uint8Array(analyser.frequencyBinCount);
+        
         mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
         audioChunks = [];
         
@@ -206,6 +222,12 @@ async function startVoiceRecording() {
             const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
             await sendAudioMessage(audioBlob);
             stream.getTracks().forEach(track => track.stop());
+            audioContext.close();
+            audioContext = null;
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
         };
         
         isRecording = true;
@@ -214,6 +236,7 @@ async function startVoiceRecording() {
         updateRecordingTime();
         recordingTimerInterval = setInterval(updateRecordingTime, 100);
         mediaRecorder.start();
+        visualizePitchLevel();
         
     } catch (error) {
         console.error("Error accessing microphone:", error);
@@ -265,6 +288,37 @@ function updateRecordingTime() {
     const timeStr = `${minutes}:${seconds.toString().padStart(2, "0")}`;
     const timeEl = document.getElementById("recordingTime");
     if (timeEl) timeEl.textContent = timeStr;
+}
+
+function visualizePitchLevel() {
+    if (!isRecording || !analyser || !dataArray) return;
+    
+    analyser.getByteFrequencyData(dataArray);
+    
+    // Calculate average frequency level
+    let sum = 0;
+    for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+    }
+    const average = sum / dataArray.length;
+    
+    // Normalize to 0-100
+    const level = Math.min(100, (average / 255) * 120);
+    
+    // Update pitch level bars
+    const bars = document.querySelectorAll(".pitch-bar");
+    const barCount = bars.length;
+    
+    bars.forEach((bar, index) => {
+        const barLevel = (level / 100) * barCount;
+        if (index < barLevel) {
+            bar.classList.add("active");
+        } else {
+            bar.classList.remove("active");
+        }
+    });
+    
+    animationId = requestAnimationFrame(visualizePitchLevel);
 }
 
 async function sendAudioMessage(audioBlob) {
