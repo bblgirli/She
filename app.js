@@ -20,6 +20,7 @@ let messagesUnsubscribe = null;
 let presenceUnsubscribe = null;
 let typingUnsubscribe = null;
 let typingTimer = null;
+let shownNotificationIds = new Set(); // Track shown notifications to avoid duplicates
 
 // ============================================
 // FIREBASE INITIALIZATION
@@ -104,6 +105,59 @@ function clearStatus() {
             el.className = "";
         }
     });
+}
+
+// ============================================
+// NOTIFICATIONS
+// ============================================
+async function requestNotificationPermission() {
+    if (!("Notification" in window)) {
+        console.warn("Notifications not supported");
+        return false;
+    }
+    
+    if (Notification.permission === "granted") {
+        return true;
+    }
+    
+    if (Notification.permission !== "denied") {
+        const permission = await Notification.requestPermission();
+        return permission === "granted";
+    }
+    
+    return false;
+}
+
+function showMessageNotification(senderName, messagePreview, senderUid) {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    
+    // Don't show notification if already on this chat
+    const currentUid = localStorage.getItem("currentChatUid");
+    if (currentUid === senderUid) return;
+    
+    // Create unique ID for this notification
+    const notifId = `${senderUid}_${Date.now()}`;
+    if (shownNotificationIds.has(notifId)) return;
+    shownNotificationIds.add(notifId);
+    
+    // Truncate message preview to 100 chars
+    const preview = messagePreview.length > 100 ? messagePreview.substring(0, 97) + "..." : messagePreview;
+    
+    const notification = new Notification(senderName, {
+        body: preview,
+        icon: "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23078b59%22 width=%22100%22 height=%22100%22/><text x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 font-size=%2250%22 fill=%22white%22>💬</text></svg>",
+        badge: "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23078b59%22 width=%22100%22 height=%22100%22/></svg>",
+        tag: `message_${senderUid}`
+    });
+    
+    // Auto-close after 6 seconds
+    setTimeout(() => notification.close(), 6000);
+    
+    // Click to open chat
+    notification.onclick = () => {
+        window.focus();
+        startChatWithUser(senderUid, senderName);
+    };
 }
 
 function setAvatarElement(element, photoURL, fallbackText = "👤") {
@@ -779,18 +833,42 @@ async function listenToUserTyping(chatUid) {
 
 async function setupMessageListener(conversationId) {
     try {
-        const { collection, query, orderBy, onSnapshot } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const { collection, query, orderBy, onSnapshot, doc, getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
         
         const messagesRef = collection(db, "conversations", conversationId, "messages");
         const q = query(messagesRef, orderBy("createdAt", "asc"));
         
         if (messagesUnsubscribe) messagesUnsubscribe();
         
+        let isFirstLoad = true;
+        
         messagesUnsubscribe = onSnapshot(q, async (snapshot) => {
             const messagesContainer = document.getElementById("messages");
             if (!messagesContainer) return;
 
             await markMessagesAsDelivered(conversationId);
+
+            // Check for new incoming messages
+            if (!isFirstLoad) {
+                for (const messageDoc of snapshot.docChanges()) {
+                    if (messageDoc.type === "added") {
+                        const message = messageDoc.doc.data();
+                        const isIncoming = message.senderId !== auth.currentUser.uid;
+                        
+                        if (isIncoming) {
+                            // Fetch sender's display name
+                            const senderSnap = await getDoc(doc(db, "users", message.senderId));
+                            const senderData = senderSnap.data() || {};
+                            const senderName = senderData.displayName || "User";
+                            
+                            // Show notification
+                            showMessageNotification(senderName, message.text, message.senderId);
+                        }
+                    }
+                }
+            }
+            
+            isFirstLoad = false;
 
             messagesContainer.innerHTML = "";
             snapshot.forEach((messageDoc) => {
@@ -1327,6 +1405,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     // Check if logged in
     if (firebaseInitialized && auth?.currentUser) {
         const currentPage = window.location.pathname.split("/").pop();
+        
+        // Request notification permission once for logged-in users
+        if (!localStorage.getItem("notificationPermissionRequested")) {
+            await requestNotificationPermission();
+            localStorage.setItem("notificationPermissionRequested", "true");
+        }
         
         if (["login.html", "signup.html", "forgot-password.html", "reset-password.html"].includes(currentPage)) {
             window.location.href = "chats.html";
