@@ -170,33 +170,123 @@ async function requestNotificationPermission() {
 function showMessageNotification(senderName, messagePreview, senderUid) {
     if (!("Notification" in window) || Notification.permission !== "granted") return;
     
-    // Don't show notification if already on this chat
     const currentUid = localStorage.getItem("currentChatUid");
     if (currentUid === senderUid) return;
     
-    // Create unique ID for this notification
-    const notifId = `${senderUid}_${Date.now()}`;
+    const cleanPreview = (messagePreview || "New message").toString().trim();
+    const preview = cleanPreview.length > 100 ? cleanPreview.substring(0, 97) + "..." : cleanPreview;
+    const notifId = `${senderUid}_${preview}`;
     if (shownNotificationIds.has(notifId)) return;
     shownNotificationIds.add(notifId);
     
-    // Truncate message preview to 100 chars
-    const preview = messagePreview.length > 100 ? messagePreview.substring(0, 97) + "..." : messagePreview;
-    
     const notification = new Notification(senderName, {
-        body: preview,
+        body: preview || "New message",
         icon: "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23078b59%22 width=%22100%22 height=%22100%22/><text x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 font-size=%2250%22 fill=%22white%22>💬</text></svg>",
         badge: "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23078b59%22 width=%22100%22 height=%22100%22/></svg>",
         tag: `message_${senderUid}`
     });
     
-    // Auto-close after 6 seconds
     setTimeout(() => notification.close(), 6000);
     
-    // Click to open chat
     notification.onclick = () => {
         window.focus();
         startChatWithUser(senderUid, senderName);
     };
+}
+
+function setupBackgroundRefresh() {
+    const currentPage = window.location.pathname.split("/").pop();
+    const refreshablePages = new Set([
+        "chats.html",
+        "chat.html",
+        "contacts.html",
+        "calls.html",
+        "status.html",
+        "settings.html",
+        "profile.html",
+        "new-chat.html",
+        "new-group.html",
+        "group-info.html",
+        "edit-profile.html"
+    ]);
+
+    if (!refreshablePages.has(currentPage)) return;
+
+    const refreshAll = async () => {
+        if (!firebaseInitialized || !auth?.currentUser) return;
+
+        if (currentPage === "chats.html") await loadChats();
+        if (currentPage === "chat.html") await loadMessages();
+        if (currentPage === "contacts.html") await loadContactsPage();
+        if (currentPage === "calls.html") await loadCallHistory();
+        if (currentPage === "profile.html" || currentPage === "edit-profile.html") await loadUserProfile();
+    };
+
+    document.addEventListener("visibilitychange", async () => {
+        if (document.visibilityState !== "visible") return;
+        await refreshAll();
+    });
+
+    window.addEventListener("focus", async () => {
+        await refreshAll();
+    });
+
+    setInterval(() => {
+        if (document.visibilityState !== "visible") {
+            refreshAll();
+        }
+    }, 15000);
+}
+
+function openImageViewer(imageSrc, title = "Shared photo") {
+    if (!imageSrc) return;
+
+    const overlay = document.createElement("div");
+    overlay.className = "image-viewer-backdrop";
+
+    const modal = document.createElement("div");
+    modal.className = "image-viewer-modal";
+
+    const header = document.createElement("div");
+    header.className = "image-viewer-header";
+    header.innerHTML = `<span>${escapeHTML(title)}</span><button class="image-viewer-close" aria-label="Close image" onclick="this.closest('.image-viewer-backdrop').remove()">✕</button>`;
+
+    const image = document.createElement("img");
+    image.src = imageSrc;
+    image.alt = title;
+    image.className = "image-viewer-image";
+
+    const actions = document.createElement("div");
+    actions.className = "image-viewer-actions";
+
+    const saveBtn = document.createElement("button");
+    saveBtn.className = "image-viewer-save";
+    saveBtn.textContent = "Save image";
+    saveBtn.onclick = () => {
+        const link = document.createElement("a");
+        link.href = imageSrc;
+        link.download = "she-photo";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+    };
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "image-viewer-close-action";
+    closeBtn.textContent = "Close";
+    closeBtn.onclick = () => overlay.remove();
+
+    actions.appendChild(saveBtn);
+    actions.appendChild(closeBtn);
+    modal.appendChild(header);
+    modal.appendChild(image);
+    modal.appendChild(actions);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener("click", (event) => {
+        if (event.target === overlay) overlay.remove();
+    });
 }
 
 function setAvatarElement(element, photoURL, fallbackText = "👤") {
@@ -2165,6 +2255,323 @@ function renderSearchResults(users) {
     container.innerHTML = html;
 }
 
+async function loadStatusUpdates() {
+    if (!firebaseInitialized || !auth?.currentUser) return;
+
+    try {
+        const { collection, query, orderBy, getDocs, getDoc, doc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const statusRef = collection(db, "status");
+        const q = query(statusRef, orderBy("createdAt", "desc"));
+        const snapshot = await getDocs(q);
+        const allStatuses = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+        const byUser = new Map();
+        for (const status of allStatuses) {
+            if (!status.userId) continue;
+            if (!byUser.has(status.userId)) {
+                byUser.set(status.userId, status);
+            }
+        }
+
+        const statusEntries = [...byUser.values()].sort((a, b) => {
+            const at = a.createdAt?.seconds || 0;
+            const bt = b.createdAt?.seconds || 0;
+            return bt - at;
+        });
+
+        const currentUserDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
+        const currentUserName = currentUserDoc.data()?.displayName || "My Status";
+
+        const container = document.querySelector(".status-list");
+        if (!container) return;
+
+        const ownStatus = statusEntries.find(item => item.userId === auth.currentUser.uid);
+        const recentStatuses = statusEntries.filter(item => item.userId !== auth.currentUser.uid);
+
+        const myStatusMarkup = ownStatus ? `
+            <div class="my-status" onclick="viewStatus('${ownStatus.userId}', '${escapeHTML(currentUserName)}')">
+                <div class="status-avatar">${ownStatus.imageData ? `<img src="${ownStatus.imageData}" alt="My status" />` : "👤"}</div>
+                <div class="status-details">
+                    <h3>My Status</h3>
+                    <p>${ownStatus.text || "Tap to view your last update"}</p>
+                </div>
+            </div>
+        ` : `
+            <div class="my-status" onclick="addStatus()">
+                <div class="status-avatar"><span>👤</span><button class="add-status">+</button></div>
+                <div class="status-details">
+                    <h3>My Status</h3>
+                    <p>Tap to add status update</p>
+                </div>
+            </div>
+        `;
+
+        const recentMarkup = recentStatuses.length
+            ? recentStatuses.map((status) => {
+                const userInfo = status.userName || "User";
+                const meta = status.createdAt?.toDate ? status.createdAt.toDate() : new Date();
+                const preview = status.text || "Shared an image";
+                const avatar = status.userPhoto ? `<img src="${status.userPhoto}" alt="${userInfo}" />` : "👤";
+                return `
+                    <div class="status-item" onclick="viewStatus('${status.userId}', '${escapeHTML(userInfo)}')">
+                        <div class="status-ring"><div class="status-avatar">${avatar}</div></div>
+                        <div class="status-details">
+                            <h3>${userInfo}</h3>
+                            <p>${preview.slice(0, 30)}${preview.length > 30 ? "..." : ""}</p>
+                        </div>
+                    </div>
+                `;
+            }).join("")
+            : '<div class="message received"><p>No recent updates yet.</p></div>';
+
+        container.innerHTML = `${myStatusMarkup}<h4 class="section-title">Recent updates</h4>${recentMarkup}`;
+    } catch (error) {
+        console.error("Error loading status updates:", error);
+    }
+}
+
+async function addStatus() {
+    if (!firebaseInitialized || !auth?.currentUser) return;
+
+    const message = prompt("Write a status update (leave blank for a photo only):", "");
+    const file = await new Promise((resolve) => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "image/*";
+        input.style.display = "none";
+        input.onchange = () => resolve(input.files?.[0] || null);
+        document.body.appendChild(input);
+        input.click();
+        input.remove();
+    });
+
+    try {
+        const { collection, addDoc, serverTimestamp, doc, getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        let imageData = "";
+
+        if (file) {
+            const reader = new FileReader();
+            const result = await new Promise((resolve, reject) => {
+                reader.onload = (event) => resolve(event.target.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+            imageData = result;
+        }
+
+        const userSnap = await getDoc(doc(db, "users", auth.currentUser.uid));
+        const userData = userSnap.data() || {};
+
+        await addDoc(collection(db, "status"), {
+            userId: auth.currentUser.uid,
+            userName: userData.displayName || auth.currentUser.email || "Me",
+            userPhoto: userData.photoData || "",
+            text: message || (imageData ? "Shared a photo" : "New status"),
+            imageData,
+            createdAt: serverTimestamp()
+        });
+
+        showSuccess("Status updated");
+        await loadStatusUpdates();
+    } catch (error) {
+        console.error("Error adding status:", error);
+        showError("Failed to update status");
+    }
+}
+
+async function viewStatus(userId, userName = "User") {
+    if (!firebaseInitialized || !auth?.currentUser) return;
+
+    try {
+        const { collection, query, where, orderBy, getDocs } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const q = query(collection(db, "status"), where("userId", "==", userId), orderBy("createdAt", "desc"));
+        const snapshot = await getDocs(q);
+        const statuses = snapshot.docs.map(doc => doc.data());
+
+        if (!statuses.length) {
+            showInfo("No status update available");
+            return;
+        }
+
+        const overlay = document.createElement("div");
+        overlay.className = "image-viewer-backdrop";
+        overlay.innerHTML = `
+            <div class="image-viewer-modal">
+                <div class="image-viewer-header">
+                    <span>${escapeHTML(userName)}</span>
+                    <button class="image-viewer-close" type="button">✕</button>
+                </div>
+                <div class="status-viewer-body">
+                    ${statuses[0].imageData ? `<img src="${statuses[0].imageData}" class="image-viewer-image" alt="Status image" />` : ""}
+                    <p class="status-viewer-text">${escapeHTML(statuses[0].text || "Shared an update")}</p>
+                </div>
+                <div class="image-viewer-actions">
+                    <button class="image-viewer-close-action" type="button">Close</button>
+                </div>
+            </div>
+        `;
+
+        const closeButtons = overlay.querySelectorAll(".image-viewer-close, .image-viewer-close-action");
+        closeButtons.forEach(btn => btn.addEventListener("click", () => overlay.remove()));
+        overlay.addEventListener("click", (event) => {
+            if (event.target === overlay) overlay.remove();
+        });
+        document.body.appendChild(overlay);
+    } catch (error) {
+        console.error("Error viewing status:", error);
+    }
+}
+
+async function createGroup() {
+    if (!firebaseInitialized || !auth?.currentUser) return;
+
+    const groupName = prompt("Group name:", "My Group");
+    if (!groupName || !groupName.trim()) return;
+
+    const extraMembers = prompt("Add members by comma-separated email addresses (optional):", "");
+    const memberEmails = extraMembers ? extraMembers.split(",").map(item => item.trim()).filter(Boolean) : [];
+
+    try {
+        const { collection, addDoc, getDocs, query, where, arrayUnion, doc, updateDoc, serverTimestamp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const usersRef = collection(db, "users");
+        const usersSnapshot = await getDocs(usersRef);
+        const matchedMemberIds = [];
+
+        for (const memberEmail of memberEmails) {
+            const match = usersSnapshot.docs.find(userDoc => {
+                const userData = userDoc.data();
+                return (userData.email || "").toLowerCase() === memberEmail.toLowerCase();
+            });
+            if (match) matchedMemberIds.push(match.data().uid);
+        }
+
+        const groupRef = await addDoc(collection(db, "groups"), {
+            name: groupName.trim(),
+            createdBy: auth.currentUser.uid,
+            members: Array.from(new Set([auth.currentUser.uid, ...matchedMemberIds])),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+        });
+
+        localStorage.setItem("currentGroupId", groupRef.id);
+        localStorage.setItem("currentGroupName", groupName.trim());
+        showSuccess("Group created");
+        setTimeout(() => window.location.href = "group-info.html", 500);
+    } catch (error) {
+        console.error("Error creating group:", error);
+        showError("Failed to create group");
+    }
+}
+
+async function createContact() {
+    const email = prompt("Add a contact by email address:", "");
+    if (!email || !email.trim()) return;
+
+    if (!firebaseInitialized || !auth?.currentUser) return;
+
+    try {
+        const { collection, getDocs, query, where } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const usersRef = collection(db, "users");
+        const q = query(usersRef, where("email", "==", email.trim().toLowerCase()));
+        const snapshot = await getDocs(q);
+
+        if (snapshot.empty) {
+            showInfo("No user found with that email");
+            return;
+        }
+
+        const user = snapshot.docs[0].data();
+        if (user.uid === auth.currentUser.uid) {
+            showInfo("That is your own account");
+            return;
+        }
+
+        const displayName = user.displayName || "User";
+        startChatWithUser(user.uid, displayName);
+    } catch (error) {
+        console.error("Error adding contact:", error);
+        showError("Could not add contact");
+    }
+}
+
+async function addParticipant() {
+    if (!firebaseInitialized || !auth?.currentUser) return;
+
+    const email = prompt("Add a participant by email:", "");
+    if (!email || !email.trim()) return;
+
+    const groupId = localStorage.getItem("currentGroupId");
+    if (!groupId) {
+        showInfo("Open a group first");
+        return;
+    }
+
+    try {
+        const { collection, getDocs, query, where, doc, updateDoc, arrayUnion } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const q = query(collection(db, "users"), where("email", "==", email.trim().toLowerCase()));
+        const snapshot = await getDocs(q);
+        if (snapshot.empty) {
+            showInfo("No matching user found");
+            return;
+        }
+        const userData = snapshot.docs[0].data();
+        await updateDoc(doc(db, "groups", groupId), {
+            members: arrayUnion(userData.uid)
+        });
+        showSuccess("Participant added");
+    } catch (error) {
+        console.error("Error adding participant:", error);
+        showError("Failed to add participant");
+    }
+}
+
+async function leaveGroup() {
+    const groupId = localStorage.getItem("currentGroupId");
+    if (!groupId || !auth?.currentUser) return;
+
+    try {
+        const { doc, updateDoc, arrayRemove } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        await updateDoc(doc(db, "groups", groupId), {
+            members: arrayRemove(auth.currentUser.uid)
+        });
+        showSuccess("Left group");
+        setTimeout(() => window.location.href = "chats.html", 500);
+    } catch (error) {
+        console.error("Error leaving group:", error);
+        showError("Could not leave group");
+    }
+}
+
+async function loadGroupSuggestions() {
+    if (!firebaseInitialized || !auth?.currentUser) return;
+
+    try {
+        const { collection, getDocs } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const snapshot = await getDocs(collection(db, "users"));
+        const users = snapshot.docs
+            .map(doc => doc.data())
+            .filter(user => user.uid && user.uid !== auth.currentUser.uid)
+            .slice(0, 8);
+
+        const container = document.querySelector(".new-chat-list");
+        if (!container || !users.length) return;
+
+        const existingHeader = container.querySelector(".section-title");
+        if (existingHeader) {
+            const suggestionBox = document.createElement("div");
+            suggestionBox.className = "group-suggestions";
+            suggestionBox.innerHTML = users.map(user => `
+                <button class="group-suggestion" onclick="startChatWithUser('${user.uid}', '${user.displayName || 'User'}')">
+                    <span>${user.photoData ? `<img src="${user.photoData}" alt="${user.displayName || 'User'}" />` : "👤"}</span>
+                    <small>${user.displayName || "User"}</small>
+                </button>
+            `).join("");
+            container.appendChild(suggestionBox);
+        }
+    } catch (error) {
+        console.warn("Could not load group suggestions:", error);
+    }
+}
+
 async function loadContactsPage() {
     if (!firebaseInitialized || !auth?.currentUser) return;
 
@@ -2355,6 +2762,19 @@ function goTo(page) {
 // ============================================
 document.addEventListener("DOMContentLoaded", async () => {
     console.log("📄 Page loaded");
+
+    document.addEventListener("contextmenu", (event) => {
+        const target = event.target;
+        if (target && target.closest("input, textarea, [contenteditable='true']")) return;
+        event.preventDefault();
+    });
+
+    document.addEventListener("copy", (event) => {
+        const selection = window.getSelection && window.getSelection();
+        if (selection && selection.toString().trim()) {
+            event.preventDefault();
+        }
+    });
     
     await initializeFirebase();
 
@@ -2367,6 +2787,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             await setCurrentUserPresence(true);
         }
     });
+
+    setupBackgroundRefresh();
 
     window.addEventListener("beforeunload", () => {
         if (auth?.currentUser) {
@@ -2432,6 +2854,14 @@ document.addEventListener("DOMContentLoaded", async () => {
             handleIncomingCall();
             showPermissionsDialog();
         }
+
+        if (currentPage === "status.html") {
+            await loadStatusUpdates();
+        }
+
+        if (currentPage === "new-group.html") {
+            await loadGroupSuggestions();
+        }
         
         if (currentPage === "chats.html") {
             await setCurrentUserPresence(true);
@@ -2479,6 +2909,14 @@ window.saveProfile = saveProfile;
 window.editProfileName = editProfileName;
 window.editAbout = editAbout;
 window.changeProfilePhoto = changeProfilePhoto;
+window.loadStatusUpdates = loadStatusUpdates;
+window.addStatus = addStatus;
+window.viewStatus = viewStatus;
+window.createGroup = createGroup;
+window.createContact = createContact;
+window.addParticipant = addParticipant;
+window.leaveGroup = leaveGroup;
+window.openImageViewer = openImageViewer;
 window.toggleLoginPassword = toggleLoginPassword;
 window.toggleSignupPassword = toggleSignupPassword;
 window.toggleConfirmPassword = toggleConfirmPassword;
