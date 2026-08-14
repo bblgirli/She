@@ -8,6 +8,7 @@ const CURRENT_USER_KEY = "she_current_user";
 
 let auth = null;
 let db = null;
+let storage = null;
 let firebaseApp = null;
 let firebaseInitialized = false;
 
@@ -34,10 +35,12 @@ async function initializeFirebase() {
         const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
         const { getAuth, setPersistence, browserLocalPersistence } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
         const { getFirestore } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const { getStorage } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js");
         
         firebaseApp = initializeApp(firebaseConfig);
         auth = getAuth(firebaseApp);
         db = getFirestore(firebaseApp);
+        storage = getStorage(firebaseApp);
         
         await setPersistence(auth, browserLocalPersistence);
         
@@ -104,6 +107,22 @@ function clearStatus() {
             el.className = "";
         }
     });
+}
+
+function setAvatarElement(element, photoURL, fallbackText = "👤") {
+    if (!element) return;
+
+    if (photoURL) {
+        element.innerHTML = `<img src="${photoURL}" alt="Profile photo" />`;
+        element.style.background = "#ddd";
+        element.style.overflow = "hidden";
+        return;
+    }
+
+    element.innerHTML = "";
+    element.textContent = fallbackText;
+    element.style.background = "#ddd";
+    element.style.overflow = "hidden";
 }
 
 function toggleLoginPassword() {
@@ -478,10 +497,7 @@ async function loadUserProfile() {
             if (profileEmail) profileEmail.textContent = userData.email || "";
             if (profilePhone) profilePhone.textContent = userData.phone || "Not set";
             if (profileAbout) profileAbout.textContent = userData.about || "Available";
-            if (profilePhoto && userData.photoURL) {
-                profilePhoto.style.backgroundImage = `url('${userData.photoURL}')`;
-                profilePhoto.textContent = "";
-            }
+            setAvatarElement(profilePhoto, userData.photoURL, "👤");
             
             // Load into edit page
             const editName = document.getElementById("editName");
@@ -494,10 +510,7 @@ async function loadUserProfile() {
             if (editAbout) editAbout.value = userData.about || "";
             if (editPhotoURL) editPhotoURL.value = userData.photoURL || "";
             if (editPhone) editPhone.value = userData.phone || "";
-            if (editProfilePhoto && userData.photoURL) {
-                editProfilePhoto.style.backgroundImage = `url('${userData.photoURL}')`;
-                editProfilePhoto.textContent = "";
-            }
+            setAvatarElement(editProfilePhoto, userData.photoURL, "👤");
             
             return userData;
         }
@@ -561,19 +574,50 @@ function editAbout() {
     window.location.href = "edit-profile.html";
 }
 
-function changeProfilePhoto() {
-    const photoURL = prompt("Enter photo URL:");
-    if (photoURL) {
-        const editPhotoURL = document.getElementById("editPhotoURL");
-        if (editPhotoURL) {
-            editPhotoURL.value = photoURL;
-            const editProfilePhoto = document.getElementById("editProfilePhoto");
-            if (editProfilePhoto) {
-                editProfilePhoto.style.backgroundImage = `url('${photoURL}')`;
-                editProfilePhoto.textContent = "";
-            }
-        }
+async function uploadProfilePhoto(file) {
+    if (!file || !auth?.currentUser || !storage) {
+        return "";
     }
+
+    try {
+        const { ref, uploadBytes, getDownloadURL } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js");
+        const extension = (file.name.split(".").pop() || "jpg").toLowerCase();
+        const storageRef = ref(storage, `profile-photos/${auth.currentUser.uid}/${Date.now()}.${extension}`);
+        await uploadBytes(storageRef, file);
+        return await getDownloadURL(storageRef);
+    } catch (error) {
+        console.error("Error uploading image:", error);
+        showError("Failed to upload image");
+        return "";
+    }
+}
+
+async function changeProfilePhoto() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.style.display = "none";
+
+    input.onchange = async () => {
+        const file = input.files?.[0];
+        if (!file) return;
+
+        const uploadedURL = await uploadProfilePhoto(file);
+        if (!uploadedURL) return;
+
+        const editPhotoURL = document.getElementById("editPhotoURL");
+        if (editPhotoURL) editPhotoURL.value = uploadedURL;
+
+        const editProfilePhoto = document.getElementById("editProfilePhoto");
+        if (editProfilePhoto) setAvatarElement(editProfilePhoto, uploadedURL, "👤");
+
+        const profilePhoto = document.getElementById("profilePhoto");
+        if (profilePhoto) setAvatarElement(profilePhoto, uploadedURL, "👤");
+    };
+
+    document.body.appendChild(input);
+    input.click();
+    input.remove();
 }
 
 // ============================================
@@ -591,8 +635,14 @@ async function loadMessages() {
     try {
         const chatHeader = document.querySelector(".chat-profile h3");
         const chatStatus = document.querySelector(".chat-profile p");
+        const chatAvatar = document.querySelector(".small-avatar");
         if (chatHeader) chatHeader.textContent = chatName || "Chat";
         if (chatStatus) chatStatus.textContent = "online";
+        
+        const { doc, getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const userSnap = await getDoc(doc(db, "users", chatUid));
+        const otherUserData = userSnap.data() || {};
+        setAvatarElement(chatAvatar, otherUserData.photoURL, "👤");
         
         const conversationId = getConversationId(auth.currentUser.uid, chatUid);
         await markMessagesAsRead(conversationId);
@@ -616,7 +666,12 @@ async function listenToUserPresence(chatUid) {
         presenceUnsubscribe = onSnapshot(doc(db, "users", chatUid), (snapshot) => {
             const userData = snapshot.data() || {};
             const statusEl = document.querySelector(".chat-profile p");
+            const avatarEl = document.querySelector(".small-avatar");
             if (!statusEl) return;
+
+            if (userData.photoURL) {
+                setAvatarElement(avatarEl, userData.photoURL, "👤");
+            }
 
             if (userData.online === true) {
                 statusEl.textContent = "Online";
@@ -949,9 +1004,13 @@ async function renderChatList() {
         const hasUnread = unreadCount > 0;
         const preview = getPreviewText(chat.lastMessage);
         const lastTime = formatMessageTime(chat.lastMessageTime || chat.updatedAt);
+        const avatarMarkup = otherUser.photoURL
+            ? `<img src="${otherUser.photoURL}" alt="Profile photo" />`
+            : "👤";
 
         html += `
             <div class="chat-item ${hasUnread ? "unread" : ""}" onclick="openChat('${otherUid}')">
+                <div class="avatar chat-avatar">${avatarMarkup}</div>
                 <div class="chat-info">
                     <div class="chat-top">
                         <h3>${otherUser.displayName || "User"}</h3>
@@ -1017,9 +1076,13 @@ function renderSearchResults(users) {
     let html = "";
     for (const user of users) {
         const phoneDisplay = user.phone ? ` • ${user.phone}` : "";
+        const avatarMarkup = user.photoURL
+            ? `<img src="${user.photoURL}" alt="Profile photo" />`
+            : "👤";
+
         html += `
             <div class="contact-item" onclick="startChatWithUser('${user.uid}', '${user.displayName || 'User'}')">
-                <div class="contact-avatar">👤</div>
+                <div class="contact-avatar">${avatarMarkup}</div>
                 <div class="contact-info">
                     <h3>${user.displayName || "Unknown"}</h3>
                     <p>${user.email}${phoneDisplay}</p>
@@ -1029,6 +1092,44 @@ function renderSearchResults(users) {
     }
     
     container.innerHTML = html;
+}
+
+async function loadContactsPage() {
+    if (!firebaseInitialized || !auth?.currentUser) return;
+
+    try {
+        const { collection, getDocs } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const snapshot = await getDocs(collection(db, "users"));
+        const users = snapshot.docs
+            .map(doc => doc.data())
+            .filter(user => user.uid && user.uid !== auth.currentUser.uid)
+            .sort((a, b) => (a.displayName || "").localeCompare(b.displayName || ""));
+
+        const container = document.getElementById("contactsResults");
+        if (!container) return;
+
+        if (!users.length) {
+            container.innerHTML = '<div class="message received"><p>No contacts yet.</p></div>';
+            return;
+        }
+
+        container.innerHTML = users.map((user) => {
+            const avatarMarkup = user.photoURL
+                ? `<img src="${user.photoURL}" alt="${user.displayName || "User"} profile" />`
+                : "👤";
+            return `
+                <div class="contact-item" onclick="startChatWithUser('${user.uid}', '${user.displayName || 'User'}')">
+                    <div class="contact-avatar">${avatarMarkup}</div>
+                    <div class="contact-info">
+                        <h3>${user.displayName || "Unknown"}</h3>
+                        <p>${user.phone || user.email || "No contact info"}</p>
+                    </div>
+                </div>
+            `;
+        }).join("");
+    } catch (error) {
+        console.error("Error loading contacts:", error);
+    }
 }
 
 function searchContacts() {
@@ -1160,6 +1261,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         // Load profile if on profile or edit-profile page
         if (currentPage === "profile.html" || currentPage === "edit-profile.html") {
             await loadUserProfile();
+        }
+
+        // Load contacts page
+        if (currentPage === "contacts.html") {
+            await loadContactsPage();
         }
         
         // Load messages if on chat page
