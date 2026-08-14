@@ -15,21 +15,6 @@ window.showDebug = function(msg) {
 // Log immediately when script loads
 window.showDebug("app.js loaded");
 
-// Single startup status; real Firebase init will decide the final state.
-document.addEventListener("DOMContentLoaded", () => {
-    window.showDebug("DOM ready");
-    const el = document.getElementById("firebaseStatus");
-    if (el) {
-        el.textContent = "⏳ Loading Firebase...";
-    }
-});
-
-if (document.readyState !== "loading") {
-    window.showDebug("Document already ready");
-    const el = document.getElementById("firebaseStatus");
-    if (el) el.textContent = "⏳ Loading Firebase...";
-}
-
 const STORAGE_KEY = "she_app_state";
 const CURRENT_USER_KEY = "she_current_user";
 
@@ -537,7 +522,7 @@ function updateFirebaseStatus() {
     // Show error if exists
     if (firebaseError) {
         console.log("updateFirebaseStatus: showing firebaseError branch");
-        statusElement.textContent = "❌ " + firebaseError;
+        statusElement.textContent = "FIREBASE ERROR: " + firebaseError;
         if (errorElement) {
             errorElement.style.display = "block";
             errorElement.innerHTML = `<strong>Firebase Error:</strong><br>${escapeHTML(firebaseError)}`;
@@ -550,7 +535,7 @@ function updateFirebaseStatus() {
     // Show initialization status
     if (!firebaseInitCompleted) {
         console.log("updateFirebaseStatus: still loading / firebaseInitCompleted false");
-        statusElement.textContent = "⏳ Loading Firebase...";
+        statusElement.textContent = "FIREBASE STARTED";
         if (googleButton) googleButton.disabled = true;
         return;
     }
@@ -558,12 +543,12 @@ function updateFirebaseStatus() {
     // Firebase initialized - check what's available
     if (auth && firebaseAuthModule && db) {
         console.log("updateFirebaseStatus: firebase ready");
-        statusElement.textContent = "✅ Firebase Ready";
+        statusElement.textContent = "FIREBASE DONE";
         if (googleButton) googleButton.disabled = false;
         if (errorElement) errorElement.style.display = "none";
     } else {
         console.log("updateFirebaseStatus: firebase unavailable / local fallback branch");
-        statusElement.textContent = "⚠️ Local Mode (Firebase unavailable)";
+        statusElement.textContent = "FIREBASE ERROR: Firebase unavailable";
         if (googleButton) googleButton.disabled = false;
         if (errorElement) {
             errorElement.style.display = "block";
