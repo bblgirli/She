@@ -11,6 +11,13 @@ let db = null;
 let firebaseApp = null;
 let firebaseInitialized = false;
 
+// Contacts and chats
+let userContacts = [];
+let chats = [];
+let currentChatUid = null;
+let chatListUnsubscribe = null;
+let messagesUnsubscribe = null;
+
 // ============================================
 // FIREBASE INITIALIZATION
 // ============================================
@@ -21,33 +28,29 @@ async function initializeFirebase() {
         console.log("🔥 Initializing Firebase...");
         showDebug("🔥 Loading Firebase modules...");
         
-        // Import Firebase modules
         const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
         const { getAuth, setPersistence, browserLocalPersistence } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
         const { getFirestore } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
         
-        // Initialize Firebase
         firebaseApp = initializeApp(firebaseConfig);
         auth = getAuth(firebaseApp);
         db = getFirestore(firebaseApp);
         
-        // Set persistence
         await setPersistence(auth, browserLocalPersistence);
         
         firebaseInitialized = true;
-        showDebug("✅ Firebase initialized successfully");
-        console.log("✅ Firebase ready");
+        showDebug("✅ Firebase initialized");
         
         return true;
     } catch (error) {
-        console.error("❌ Firebase initialization failed:", error);
+        console.error("❌ Firebase error:", error);
         showDebug("❌ Firebase error: " + error.message);
         return false;
     }
 }
 
 // ============================================
-// DEBUG PANEL
+// DEBUG & UI HELPERS
 // ============================================
 function showDebug(msg) {
     console.log(msg);
@@ -60,9 +63,6 @@ function showDebug(msg) {
     }
 }
 
-// ============================================
-// UI HELPERS
-// ============================================
 function showError(message) {
     const statusElement = document.getElementById("pageStatus")
         || document.getElementById("loginStatus")
@@ -105,27 +105,21 @@ function clearStatus() {
 
 function toggleLoginPassword() {
     const input = document.getElementById("loginPassword");
-    if (input) {
-        input.type = input.type === "password" ? "text" : "password";
-    }
+    if (input) input.type = input.type === "password" ? "text" : "password";
 }
 
 function toggleSignupPassword() {
     const input = document.getElementById("signupPassword");
-    if (input) {
-        input.type = input.type === "password" ? "text" : "password";
-    }
+    if (input) input.type = input.type === "password" ? "text" : "password";
 }
 
 function toggleConfirmPassword() {
     const input = document.getElementById("signupConfirm");
-    if (input) {
-        input.type = input.type === "password" ? "text" : "password";
-    }
+    if (input) input.type = input.type === "password" ? "text" : "password";
 }
 
 // ============================================
-// LOCAL STORAGE (Fallback for offline mode)
+// LOCAL STORAGE
 // ============================================
 function saveUser(user) {
     localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
@@ -141,7 +135,7 @@ function clearUser() {
 }
 
 // ============================================
-// AUTHENTICATION HANDLERS
+// AUTHENTICATION
 // ============================================
 async function handleLogin(event) {
     event.preventDefault();
@@ -156,12 +150,11 @@ async function handleLogin(event) {
     }
     
     showError("Logging in...");
-    showDebug("🔥 Attempting login for: " + email);
     
     if (!firebaseInitialized) {
         const success = await initializeFirebase();
         if (!success) {
-            showError("Firebase connection failed. Check your internet.");
+            showError("Firebase connection failed");
             return;
         }
     }
@@ -169,34 +162,21 @@ async function handleLogin(event) {
     try {
         const { signInWithEmailAndPassword } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
         
-        showDebug("🔥 Calling signInWithEmailAndPassword...");
         const result = await signInWithEmailAndPassword(auth, email, password);
         
-        showDebug("✅ Login successful: " + result.user.uid);
         saveUser({
             uid: result.user.uid,
             email: result.user.email,
             displayName: result.user.displayName || ""
         });
         
-        showSuccess("Login successful! Redirecting...");
-        setTimeout(() => {
-            window.location.href = "chats.html";
-        }, 500);
+        showSuccess("Redirecting...");
+        setTimeout(() => window.location.href = "chats.html", 500);
         
     } catch (error) {
-        showDebug("❌ Login failed: " + error.code + " - " + error.message);
-        
         let message = error.message;
-        if (error.code === "auth/user-not-found") {
-            message = "No account found with this email";
-        } else if (error.code === "auth/wrong-password") {
-            message = "Wrong password";
-        } else if (error.code === "auth/invalid-email") {
-            message = "Invalid email";
-        } else if (error.code === "auth/too-many-requests") {
-            message = "Too many failed attempts. Try again later";
-        }
+        if (error.code === "auth/user-not-found") message = "No account found";
+        else if (error.code === "auth/wrong-password") message = "Wrong password";
         
         showError(message);
     }
@@ -217,22 +197,21 @@ async function handleSignup(event) {
     }
     
     if (password !== confirm) {
-        showError("Passwords do not match");
+        showError("Passwords don't match");
         return;
     }
     
     if (password.length < 6) {
-        showError("Password must be at least 6 characters");
+        showError("Password must be 6+ characters");
         return;
     }
     
     showError("Creating account...");
-    showDebug("🔥 Attempting signup for: " + email);
     
     if (!firebaseInitialized) {
         const success = await initializeFirebase();
         if (!success) {
-            showError("Firebase connection failed. Check your internet.");
+            showError("Firebase connection failed");
             return;
         }
     }
@@ -240,35 +219,30 @@ async function handleSignup(event) {
     try {
         const { createUserWithEmailAndPassword, updateProfile } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
         
-        showDebug("🔥 Calling createUserWithEmailAndPassword...");
         const result = await createUserWithEmailAndPassword(auth, email, password);
-        
-        showDebug("🔥 Updating display name...");
         await updateProfile(result.user, { displayName });
         
-        showDebug("✅ Signup successful: " + result.user.uid);
+        // Save user to Firestore
+        const { setDoc, doc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        await setDoc(doc(db, "users", result.user.uid), {
+            uid: result.user.uid,
+            email: result.user.email,
+            displayName: displayName,
+            createdAt: new Date()
+        });
+        
         saveUser({
             uid: result.user.uid,
             email: result.user.email,
             displayName: displayName
         });
         
-        showSuccess("Account created! Redirecting...");
-        setTimeout(() => {
-            window.location.href = "chats.html";
-        }, 500);
+        showSuccess("Redirecting...");
+        setTimeout(() => window.location.href = "chats.html", 500);
         
     } catch (error) {
-        showDebug("❌ Signup failed: " + error.code + " - " + error.message);
-        
         let message = error.message;
-        if (error.code === "auth/email-already-in-use") {
-            message = "Email already in use";
-        } else if (error.code === "auth/invalid-email") {
-            message = "Invalid email";
-        } else if (error.code === "auth/weak-password") {
-            message = "Password too weak";
-        }
+        if (error.code === "auth/email-already-in-use") message = "Email already in use";
         
         showError(message);
     }
@@ -277,7 +251,6 @@ async function handleSignup(event) {
 async function handleGoogleLogin() {
     clearStatus();
     showError("Starting Google sign-in...");
-    showDebug("🔥 Google login initiated");
     
     if (!firebaseInitialized) {
         const success = await initializeFirebase();
@@ -290,33 +263,30 @@ async function handleGoogleLogin() {
     try {
         const { GoogleAuthProvider, signInWithPopup } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
         
-        showDebug("🔥 Creating Google provider...");
         const provider = new GoogleAuthProvider();
-        
-        showDebug("🔥 Calling signInWithPopup...");
         const result = await signInWithPopup(auth, provider);
         
-        showDebug("✅ Google login successful: " + result.user.uid);
+        // Save to Firestore
+        const { setDoc, doc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        await setDoc(doc(db, "users", result.user.uid), {
+            uid: result.user.uid,
+            email: result.user.email,
+            displayName: result.user.displayName || "",
+            createdAt: new Date()
+        }, { merge: true });
+        
         saveUser({
             uid: result.user.uid,
             email: result.user.email,
             displayName: result.user.displayName || ""
         });
         
-        showSuccess("Google login successful! Redirecting...");
-        setTimeout(() => {
-            window.location.href = "chats.html";
-        }, 500);
+        showSuccess("Redirecting...");
+        setTimeout(() => window.location.href = "chats.html", 500);
         
     } catch (error) {
-        showDebug("❌ Google login failed: " + error.code + " - " + error.message);
-        
         let message = error.message;
-        if (error.code === "auth/popup-closed-by-user") {
-            message = "Sign-in popup closed";
-        } else if (error.code === "auth/operation-not-allowed") {
-            message = "Google sign-in not enabled";
-        }
+        if (error.code === "auth/popup-closed-by-user") message = "Popup closed";
         
         showError(message);
     }
@@ -333,7 +303,6 @@ async function handleForgotPassword(event) {
     }
     
     showError("Sending reset email...");
-    showDebug("🔥 Password reset requested for: " + email);
     
     if (!firebaseInitialized) {
         const success = await initializeFirebase();
@@ -346,14 +315,10 @@ async function handleForgotPassword(event) {
     try {
         const { sendPasswordResetEmail } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
         
-        showDebug("🔥 Sending password reset email...");
         await sendPasswordResetEmail(auth, email);
-        
-        showDebug("✅ Password reset email sent");
         showSuccess("Check your email for password reset link");
         
     } catch (error) {
-        showDebug("❌ Password reset failed: " + error.code);
         showError(error.message);
     }
 }
@@ -371,12 +336,11 @@ async function handleResetPassword(event) {
     }
     
     if (password !== confirm) {
-        showError("Passwords do not match");
+        showError("Passwords don't match");
         return;
     }
     
     showError("Resetting password...");
-    showDebug("🔥 Password reset in progress");
     
     if (!firebaseInitialized) {
         const success = await initializeFirebase();
@@ -392,35 +356,200 @@ async function handleResetPassword(event) {
         const code = params.get("oobCode");
         
         if (!code) {
-            showError("Invalid password reset link");
+            showError("Invalid reset link");
             return;
         }
         
-        showDebug("🔥 Confirming password reset...");
         await confirmPasswordReset(auth, code, password);
-        
-        showDebug("✅ Password reset successful");
-        showSuccess("Password reset successful! Redirecting to login...");
-        setTimeout(() => {
-            window.location.href = "login.html";
-        }, 2000);
+        showSuccess("Password reset! Redirecting to login...");
+        setTimeout(() => window.location.href = "login.html", 2000);
         
     } catch (error) {
-        showDebug("❌ Password reset failed: " + error.code);
         showError(error.message);
     }
 }
 
 function logout() {
-    if (auth) {
-        auth.signOut();
-    }
+    if (auth) auth.signOut();
     clearUser();
+    if (chatListUnsubscribe) chatListUnsubscribe();
+    if (messagesUnsubscribe) messagesUnsubscribe();
     window.location.href = "login.html";
 }
 
-function redirectToChats() {
-    window.location.href = "chats.html";
+// ============================================
+// CONTACTS & CHATS
+// ============================================
+async function loadChats() {
+    if (!firebaseInitialized || !auth?.currentUser) return;
+    
+    try {
+        const { collection, query, where, onSnapshot } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        
+        if (chatListUnsubscribe) chatListUnsubscribe();
+        
+        const q = query(
+            collection(db, "conversations"),
+            where("participants", "array-contains", auth.currentUser.uid)
+        );
+        
+        chatListUnsubscribe = onSnapshot(q, (snapshot) => {
+            chats = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            renderChatList();
+        });
+    } catch (error) {
+        console.error("Error loading chats:", error);
+    }
+}
+
+async function renderChatList() {
+    const container = document.getElementById("chatList") || document.querySelector(".chat-list");
+    if (!container) return;
+    
+    if (!chats || chats.length === 0) {
+        container.innerHTML = '<div class="message received"><p>No chats yet. Start a new chat!</p></div>';
+        return;
+    }
+    
+    let html = "";
+    for (const chat of chats) {
+        const otherUid = chat.participants.find(uid => uid !== auth.currentUser.uid);
+        const { getDocs, query, collection, where } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        
+        const userSnap = await getDocs(query(collection(db, "users"), where("uid", "==", otherUid)));
+        const otherUser = userSnap.docs[0]?.data() || { displayName: "Unknown" };
+        
+        html += `
+            <div class="chat-item" onclick="openChat('${otherUid}')">
+                <div class="chat-info">
+                    <h3>${otherUser.displayName || "User"}</h3>
+                    <p>${chat.lastMessage || "No messages yet"}</p>
+                </div>
+            </div>
+        `;
+    }
+    
+    container.innerHTML = html;
+}
+
+async function searchContacts() {
+    const searchTerm = document.getElementById("newChatSearch")?.value?.trim() || "";
+    if (!searchTerm) {
+        renderAllUsers();
+        return;
+    }
+    
+    try {
+        const { collection, query, where, getDocs } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        
+        // Search by UID or display name
+        const q = query(
+            collection(db, "users"),
+            where("uid", "!=", auth.currentUser.uid)
+        );
+        
+        const snapshot = await getDocs(q);
+        const results = snapshot.docs
+            .map(doc => doc.data())
+            .filter(user => 
+                user.uid.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (user.displayName && user.displayName.toLowerCase().includes(searchTerm.toLowerCase()))
+            );
+        
+        renderContactsList(results);
+    } catch (error) {
+        console.error("Search error:", error);
+    }
+}
+
+async function renderAllUsers() {
+    try {
+        const { collection, query, where, getDocs } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        
+        const q = query(
+            collection(db, "users"),
+            where("uid", "!=", auth.currentUser.uid)
+        );
+        
+        const snapshot = await getDocs(q);
+        const users = snapshot.docs.map(doc => doc.data());
+        
+        renderContactsList(users);
+    } catch (error) {
+        console.error("Error loading users:", error);
+    }
+}
+
+function renderContactsList(users) {
+    const container = document.querySelector(".new-chat-list");
+    if (!container) return;
+    
+    if (!users || users.length === 0) {
+        container.innerHTML = '<div class="message received"><p>No users found</p></div>';
+        return;
+    }
+    
+    let html = "";
+    for (const user of users) {
+        html += `
+            <div class="contact-item" onclick="addContact('${user.uid}', '${user.displayName || 'User'}')">
+                <div class="contact-avatar">👤</div>
+                <div class="contact-info">
+                    <h3>${user.displayName || "Unknown"}</h3>
+                    <p>${user.uid}</p>
+                </div>
+            </div>
+        `;
+    }
+    
+    container.innerHTML = html;
+}
+
+async function addContact(uid, displayName) {
+    if (!firebaseInitialized || !auth?.currentUser) return;
+    
+    try {
+        const { setDoc, doc, collection, query, where, getDocs } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        
+        // Create conversation
+        const conversationId = [auth.currentUser.uid, uid].sort().join("_");
+        
+        await setDoc(doc(db, "conversations", conversationId), {
+            participants: [auth.currentUser.uid, uid],
+            lastMessage: "",
+            updatedAt: new Date()
+        }, { merge: true });
+        
+        showSuccess("Chat started with " + displayName);
+        setTimeout(() => {
+            window.location.href = "chats.html";
+        }, 500);
+        
+    } catch (error) {
+        console.error("Error adding contact:", error);
+        showError("Failed to start chat");
+    }
+}
+
+async function openChat(uid) {
+    currentChatUid = uid;
+    localStorage.setItem("currentChatUid", uid);
+    window.location.href = "chat.html";
+}
+
+function newChat() {
+    window.location.href = "new-chat.html";
+}
+
+function goBack() {
+    window.history.back();
+}
+
+function openMenu() {
+    alert("Menu: Settings, Profile, Logout");
+    if (confirm("Logout?")) {
+        logout();
+    }
 }
 
 function goTo(page) {
@@ -432,56 +561,44 @@ function goTo(page) {
 // ============================================
 document.addEventListener("DOMContentLoaded", async () => {
     console.log("📄 Page loaded");
-    showDebug("App started");
     
-    // Initialize Firebase
     await initializeFirebase();
     
-    // Attach event listeners
-    const loginForm = document.getElementById("loginForm");
-    if (loginForm) {
-        loginForm.addEventListener("submit", handleLogin);
-    }
+    // Attach auth form listeners
+    document.getElementById("loginForm")?.addEventListener("submit", handleLogin);
+    document.getElementById("signupForm")?.addEventListener("submit", handleSignup);
+    document.getElementById("forgotPasswordForm")?.addEventListener("submit", handleForgotPassword);
+    document.getElementById("resetPasswordForm")?.addEventListener("submit", handleResetPassword);
+    document.querySelector(".google-button")?.addEventListener("click", handleGoogleLogin);
     
-    const signupForm = document.getElementById("signupForm");
-    if (signupForm) {
-        signupForm.addEventListener("submit", handleSignup);
-    }
-    
-    const forgotForm = document.getElementById("forgotPasswordForm");
-    if (forgotForm) {
-        forgotForm.addEventListener("submit", handleForgotPassword);
-    }
-    
-    const resetForm = document.getElementById("resetPasswordForm");
-    if (resetForm) {
-        resetForm.addEventListener("submit", handleResetPassword);
-    }
-    
-    const googleBtn = document.querySelector(".google-button");
-    if (googleBtn) {
-        googleBtn.addEventListener("click", handleGoogleLogin);
-    }
-    
-    // Check if user is already logged in
+    // Check if logged in
     if (firebaseInitialized && auth?.currentUser) {
-        showDebug("✅ User already logged in: " + auth.currentUser.email);
-        saveUser({
-            uid: auth.currentUser.uid,
-            email: auth.currentUser.email,
-            displayName: auth.currentUser.displayName || ""
-        });
-        
-        // If on auth page, redirect to chats
         const currentPage = window.location.pathname.split("/").pop();
+        
         if (["login.html", "signup.html", "forgot-password.html", "reset-password.html"].includes(currentPage)) {
-            redirectToChats();
+            window.location.href = "chats.html";
+            return;
+        }
+        
+        // Load chats if on chats page
+        if (currentPage === "chats.html") {
+            loadChats();
+        }
+        
+        // Load contacts if on new-chat page
+        if (currentPage === "new-chat.html") {
+            renderAllUsers();
+        }
+    } else if (!firebaseInitialized) {
+        const currentPage = window.location.pathname.split("/").pop();
+        if (!["login.html", "signup.html", "forgot-password.html", "reset-password.html"].includes(currentPage)) {
+            window.location.href = "login.html";
         }
     }
 });
 
 // ============================================
-// EXPOSE FUNCTIONS TO WINDOW
+// EXPOSE TO WINDOW
 // ============================================
 window.handleLogin = handleLogin;
 window.handleSignup = handleSignup;
@@ -490,6 +607,13 @@ window.handleForgotPassword = handleForgotPassword;
 window.handleResetPassword = handleResetPassword;
 window.logout = logout;
 window.goTo = goTo;
+window.goBack = goBack;
+window.openMenu = openMenu;
+window.newChat = newChat;
+window.openChat = openChat;
+window.addContact = addContact;
+window.searchContacts = searchContacts;
+window.renderAllUsers = renderAllUsers;
 window.toggleLoginPassword = toggleLoginPassword;
 window.toggleSignupPassword = toggleSignupPassword;
 window.toggleConfirmPassword = toggleConfirmPassword;
