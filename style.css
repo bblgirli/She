@@ -761,6 +761,91 @@ button {
     font-size: 20px;
 }
 
+/* VOICE RECORDING */
+
+.voice-recording-ui {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: #ff4444;
+    border-radius: 25px;
+    color: white;
+}
+
+.recording-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.recording-dot {
+    width: 8px;
+    height: 8px;
+    background: white;
+    border-radius: 50%;
+    animation: recording-pulse 1s infinite;
+}
+
+@keyframes recording-pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.3;
+    }
+}
+
+.lock-recording-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.3);
+    color: white;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+.lock-recording-btn:active,
+.lock-recording-btn.locked {
+    background: rgba(255, 255, 255, 0.6);
+}
+
+audio {
+    width: 100%;
+    height: 30px;
+}
+
+.audio-message {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.audio-play-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #078b59;
+    color: white;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    padding: 0;
+}
+
+.message.received .audio-play-btn {
+    background: #e2ece7;
+    color: #078b59;
+}
+
 
 /* DESKTOP */
 

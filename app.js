@@ -22,6 +22,14 @@ let typingUnsubscribe = null;
 let typingTimer = null;
 let shownNotificationIds = new Set(); // Track shown notifications to avoid duplicates
 
+// Voice recording
+let mediaRecorder = null;
+let audioChunks = [];
+let isRecording = false;
+let recordingLocked = false;
+let recordingStartTime = null;
+let recordingTimerInterval = null;
+
 // ============================================
 // FIREBASE INITIALIZATION
 // ============================================
@@ -174,6 +182,133 @@ function setAvatarElement(element, photoURL, fallbackText = "👤") {
     element.textContent = fallbackText;
     element.style.background = "#ddd";
     element.style.overflow = "hidden";
+}
+
+// ============================================
+// VOICE RECORDING
+// ============================================
+async function startVoiceRecording() {
+    if (isRecording) return;
+    
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true } });
+        
+        mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
+        audioChunks = [];
+        
+        mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+                audioChunks.push(event.data);
+            }
+        };
+        
+        mediaRecorder.onstop = async () => {
+            const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+            await sendAudioMessage(audioBlob);
+            stream.getTracks().forEach(track => track.stop());
+        };
+        
+        isRecording = true;
+        recordingStartTime = Date.now();
+        showRecordingUI();
+        updateRecordingTime();
+        recordingTimerInterval = setInterval(updateRecordingTime, 100);
+        mediaRecorder.start();
+        
+    } catch (error) {
+        console.error("Error accessing microphone:", error);
+        showError("Microphone access denied");
+    }
+}
+
+function stopVoiceRecording() {
+    if (!isRecording || recordingLocked) return;
+    
+    isRecording = false;
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+    }
+    clearInterval(recordingTimerInterval);
+    hideRecordingUI();
+}
+
+function toggleLockRecording() {
+    recordingLocked = !recordingLocked;
+    const lockBtn = document.getElementById("lockRecordingBtn");
+    if (lockBtn) {
+        lockBtn.textContent = recordingLocked ? "🔒" : "🔓";
+        lockBtn.classList.toggle("locked", recordingLocked);
+    }
+}
+
+function showRecordingUI() {
+    const ui = document.getElementById("voiceRecordingUI");
+    if (ui) ui.style.display = "flex";
+}
+
+function hideRecordingUI() {
+    const ui = document.getElementById("voiceRecordingUI");
+    if (ui) ui.style.display = "none";
+    recordingLocked = false;
+    const lockBtn = document.getElementById("lockRecordingBtn");
+    if (lockBtn) {
+        lockBtn.textContent = "🔓";
+        lockBtn.classList.remove("locked");
+    }
+}
+
+function updateRecordingTime() {
+    if (!recordingStartTime) return;
+    const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+    const minutes = Math.floor(elapsed / 60);
+    const seconds = elapsed % 60;
+    const timeStr = `${minutes}:${seconds.toString().padStart(2, "0")}`;
+    const timeEl = document.getElementById("recordingTime");
+    if (timeEl) timeEl.textContent = timeStr;
+}
+
+async function sendAudioMessage(audioBlob) {
+    if (!auth?.currentUser || !db) return;
+    
+    try {
+        const conversationId = getConversationId(auth.currentUser.uid, localStorage.getItem("currentChatUid"));
+        
+        // Convert blob to base64 for smaller storage
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const audioData = e.target.result;
+            
+            const { doc, collection, addDoc, serverTimestamp, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+            
+            // Add message with audio data
+            const messageDocRef = await addDoc(collection(db, "conversations", conversationId, "messages"), {
+                senderId: auth.currentUser.uid,
+                audioData: audioData, // base64 encoded audio
+                text: "[Voice message]",
+                status: "sent",
+                createdAt: serverTimestamp()
+            });
+            
+            // Update conversation
+            await updateDoc(doc(db, "conversations", conversationId), {
+                lastMessage: "[Voice message]",
+                lastMessageSenderId: auth.currentUser.uid,
+                lastMessageTime: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+                unreadBy: [localStorage.getItem("currentChatUid")]
+            });
+            
+            // Set message to read for sender
+            await updateDoc(doc(db, "conversations", conversationId, "messages", messageDocRef.id), {
+                status: "read"
+            });
+        };
+        reader.readAsDataURL(audioBlob);
+        
+    } catch (error) {
+        console.error("Error sending audio message:", error);
+        showError("Failed to send voice message");
+    }
 }
 
 function toggleLoginPassword() {
@@ -879,15 +1014,34 @@ async function setupMessageListener(conversationId) {
 
                 const messageEl = document.createElement("div");
                 messageEl.className = `message ${isOwn ? "sent" : "received"}`;
-                messageEl.innerHTML = `
-                    <div class="message-body">
-                        <p>${escapeHTML(message.text)}</p>
-                    </div>
-                    <div class="message-meta">
-                        <span class="message-time-inline">${messageTime}</span>
-                        ${isOwn ? `<span class="status-ticks ${messageStatus}">${getStatusTicks(messageStatus)}</span>` : ""}
-                    </div>
-                `;
+                
+                // Check if this is an audio message
+                if (message.audioData) {
+                    messageEl.innerHTML = `
+                        <div class="message-body">
+                            <div class="audio-message">
+                                <button class="audio-play-btn" onclick="playAudio('${messageDoc.id}', this)">▶️</button>
+                                <audio id="audio-${messageDoc.id}" style="display: none;">
+                                    <source src="${message.audioData}" type="audio/webm" />
+                                </audio>
+                            </div>
+                        </div>
+                        <div class="message-meta">
+                            <span class="message-time-inline">${messageTime}</span>
+                            ${isOwn ? `<span class="status-ticks ${messageStatus}">${getStatusTicks(messageStatus)}</span>` : ""}
+                        </div>
+                    `;
+                } else {
+                    messageEl.innerHTML = `
+                        <div class="message-body">
+                            <p>${escapeHTML(message.text)}</p>
+                        </div>
+                        <div class="message-meta">
+                            <span class="message-time-inline">${messageTime}</span>
+                            ${isOwn ? `<span class="status-ticks ${messageStatus}">${getStatusTicks(messageStatus)}</span>` : ""}
+                        </div>
+                    `;
+                }
 
                 messagesContainer.appendChild(messageEl);
             });
@@ -898,6 +1052,23 @@ async function setupMessageListener(conversationId) {
     } catch (error) {
         console.error("Error setting up listener:", error);
     }
+}
+
+function playAudio(messageId, buttonEl) {
+    const audio = document.getElementById(`audio-${messageId}`);
+    if (!audio) return;
+    
+    if (audio.paused) {
+        audio.play();
+        buttonEl.textContent = "⏸️";
+    } else {
+        audio.pause();
+        buttonEl.textContent = "▶️";
+    }
+    
+    audio.onended = () => {
+        buttonEl.textContent = "▶️";
+    };
 }
 
 function getStatusTicks(status) {
@@ -1495,6 +1666,9 @@ window.handleMessageInput = handleMessageInput;
 window.showEmoji = showEmoji;
 window.attachFile = attachFile;
 window.openCamera = openCamera;
-window.sendVoiceMessage = sendVoiceMessage;
+window.startVoiceRecording = startVoiceRecording;
+window.stopVoiceRecording = stopVoiceRecording;
+window.toggleLockRecording = toggleLockRecording;
+window.playAudio = playAudio;
 window.startCall = startCall;
 window.startVideoCall = startVideoCall;

@@ -120,10 +120,29 @@
 
         </div>
 
+        <!-- Voice Recording UI -->
+        <div id="voiceRecordingUI" class="voice-recording-ui" style="display: none;">
+            <div class="recording-indicator">
+                <span class="recording-dot"></span>
+                <span id="recordingTime">0:00</span>
+            </div>
+            <button 
+                id="lockRecordingBtn" 
+                class="lock-recording-btn" 
+                onclick="toggleLockRecording()"
+                title="Lock to record hands-free"
+            >
+                🔓
+            </button>
+        </div>
 
         <button
+            id="micButton"
             class="mic-button"
-            onclick="sendVoiceMessage()"
+            onmousedown="startVoiceRecording()"
+            ontouchstart="startVoiceRecording()"
+            onmouseup="stopVoiceRecording()"
+            ontouchend="stopVoiceRecording()"
         >
             🎙️
         </button>
