@@ -571,15 +571,40 @@ function editAbout() {
     window.location.href = "edit-profile.html";
 }
 
-async function uploadProfilePhoto(file) {
-    if (!file || !auth?.currentUser) {
-        return "";
-    }
-
+async function compressImage(file, maxWidth = 400, maxHeight = 400, quality = 0.7) {
     return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = (event) => {
-            resolve(event.target?.result || "");
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement("canvas");
+                let width = img.width;
+                let height = img.height;
+                
+                if (width > height) {
+                    if (width > maxWidth) {
+                        height = Math.round(height * (maxWidth / width));
+                        width = maxWidth;
+                    }
+                } else {
+                    if (height > maxHeight) {
+                        width = Math.round(width * (maxHeight / height));
+                        height = maxHeight;
+                    }
+                }
+                
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext("2d");
+                ctx.drawImage(img, 0, 0, width, height);
+                resolve(canvas.toDataURL("image/jpeg", quality));
+            };
+            img.onerror = () => {
+                console.error("Error loading image");
+                showError("Failed to process image");
+                resolve("");
+            };
+            img.src = event.target?.result || "";
         };
         reader.onerror = () => {
             console.error("Error reading file");
@@ -588,6 +613,14 @@ async function uploadProfilePhoto(file) {
         };
         reader.readAsDataURL(file);
     });
+}
+
+async function uploadProfilePhoto(file) {
+    if (!file || !auth?.currentUser) {
+        return "";
+    }
+
+    return await compressImage(file, 400, 400, 0.7);
 }
 
 async function changeProfilePhoto() {
