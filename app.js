@@ -53,10 +53,11 @@ let callHistoryListener = null;
 // FIREBASE INITIALIZATION
 // ============================================
 async function initializeFirebase() {
-    if (firebaseInitialized) return;
+    if (firebaseInitialized) return true;
     
     try {
         console.log("🔥 Initializing Firebase...");
+        updateFirebaseStatus("⏳ Connecting to Firebase...", false);
         showDebug("🔥 Loading Firebase modules...");
         
         const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
@@ -71,11 +72,15 @@ async function initializeFirebase() {
         
         firebaseInitialized = true;
         showDebug("✅ Firebase initialized");
+        updateFirebaseStatus("✅ Firebase connected", false);
         
         return true;
     } catch (error) {
         console.error("❌ Firebase error:", error);
-        showDebug("❌ Firebase error: " + error.message);
+        const message = error?.message || "Unknown Firebase error";
+        showDebug("❌ Firebase error: " + message);
+        updateFirebaseStatus("❌ Firebase connection failed", true);
+        showError("Firebase connection failed. Check project config.");
         return false;
     }
 }
@@ -83,6 +88,14 @@ async function initializeFirebase() {
 // ============================================
 // DEBUG & UI HELPERS
 // ============================================
+function updateFirebaseStatus(message, isError = false) {
+    const statusEl = document.getElementById("firebaseStatus");
+    if (!statusEl) return;
+    statusEl.textContent = message;
+    statusEl.style.color = isError ? "#c33" : "#078b59";
+    statusEl.style.display = "block";
+}
+
 function showDebug(msg) {
     console.log(msg);
     const debugEl = document.getElementById("firebaseDebug");
@@ -92,6 +105,7 @@ function showDebug(msg) {
         debugEl.appendChild(line);
         debugEl.scrollTop = debugEl.scrollHeight;
     }
+    updateFirebaseStatus(msg, false);
 }
 
 function showError(message) {
