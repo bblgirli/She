@@ -571,7 +571,7 @@ function editAbout() {
     window.location.href = "edit-profile.html";
 }
 
-async function compressImage(file, maxWidth = 400, maxHeight = 400, quality = 0.7) {
+async function compressImage(file, maxWidth = 200, maxHeight = 200, quality = 0.5) {
     return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = (event) => {
@@ -620,7 +620,7 @@ async function uploadProfilePhoto(file) {
         return "";
     }
 
-    return await compressImage(file, 400, 400, 0.7);
+    return await compressImage(file, 200, 200, 0.5);
 }
 
 async function changeProfilePhoto() {
