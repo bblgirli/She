@@ -385,6 +385,131 @@ function logout() {
 }
 
 // ============================================
+// PROFILE MANAGEMENT
+// ============================================
+async function loadUserProfile() {
+    if (!firebaseInitialized || !auth?.currentUser) return;
+    
+    try {
+        const { doc, getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        
+        const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
+        
+        if (userDoc.exists()) {
+            const userData = userDoc.data();
+            
+            // Display on profile page
+            const profileName = document.getElementById("profileName");
+            const displayName = document.getElementById("displayName");
+            const profileEmail = document.getElementById("profileEmail");
+            const profilePhone = document.getElementById("profilePhone");
+            const profileAbout = document.getElementById("profileAbout");
+            const profilePhoto = document.getElementById("profilePhoto");
+            
+            if (profileName) profileName.textContent = userData.displayName || "User";
+            if (displayName) displayName.textContent = userData.displayName || "User";
+            if (profileEmail) profileEmail.textContent = userData.email || "";
+            if (profilePhone) profilePhone.textContent = userData.phone || "Not set";
+            if (profileAbout) profileAbout.textContent = userData.about || "Available";
+            if (profilePhoto && userData.photoURL) {
+                profilePhoto.style.backgroundImage = `url('${userData.photoURL}')`;
+                profilePhoto.textContent = "";
+            }
+            
+            // Load into edit page
+            const editName = document.getElementById("editName");
+            const editAbout = document.getElementById("editAbout");
+            const editPhotoURL = document.getElementById("editPhotoURL");
+            const editPhone = document.getElementById("editPhone");
+            const editProfilePhoto = document.getElementById("editProfilePhoto");
+            
+            if (editName) editName.value = userData.displayName || "";
+            if (editAbout) editAbout.value = userData.about || "";
+            if (editPhotoURL) editPhotoURL.value = userData.photoURL || "";
+            if (editPhone) editPhone.value = userData.phone || "";
+            if (editProfilePhoto && userData.photoURL) {
+                editProfilePhoto.style.backgroundImage = `url('${userData.photoURL}')`;
+                editProfilePhoto.textContent = "";
+            }
+            
+            return userData;
+        }
+    } catch (error) {
+        console.error("Error loading profile:", error);
+    }
+}
+
+async function saveProfile() {
+    if (!firebaseInitialized || !auth?.currentUser) return;
+    
+    try {
+        const name = document.getElementById("editName")?.value?.trim() || "";
+        const about = document.getElementById("editAbout")?.value?.trim() || "";
+        const photoURL = document.getElementById("editPhotoURL")?.value?.trim() || "";
+        const phone = document.getElementById("editPhone")?.value?.trim() || "";
+        
+        if (!name) {
+            showError("Name is required");
+            return;
+        }
+        
+        showError("Saving profile...");
+        
+        const { doc, setDoc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const { updateProfile } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
+        
+        // Update Firestore
+        await setDoc(doc(db, "users", auth.currentUser.uid), {
+            uid: auth.currentUser.uid,
+            email: auth.currentUser.email,
+            displayName: name,
+            about: about,
+            photoURL: photoURL,
+            phone: phone,
+            updatedAt: new Date()
+        }, { merge: true });
+        
+        // Update Firebase Auth
+        await updateProfile(auth.currentUser, {
+            displayName: name,
+            photoURL: photoURL
+        });
+        
+        showSuccess("Profile saved!");
+        setTimeout(() => {
+            window.location.href = "profile.html";
+        }, 1000);
+        
+    } catch (error) {
+        console.error("Error saving profile:", error);
+        showError("Failed to save profile: " + error.message);
+    }
+}
+
+function editProfileName() {
+    window.location.href = "edit-profile.html";
+}
+
+function editAbout() {
+    window.location.href = "edit-profile.html";
+}
+
+function changeProfilePhoto() {
+    const photoURL = prompt("Enter photo URL:");
+    if (photoURL) {
+        const editPhotoURL = document.getElementById("editPhotoURL");
+        if (editPhotoURL) {
+            editPhotoURL.value = photoURL;
+            const editProfilePhoto = document.getElementById("editProfilePhoto");
+            if (editProfilePhoto) {
+                editProfilePhoto.style.backgroundImage = `url('${photoURL}')`;
+                editProfilePhoto.textContent = "";
+            }
+        }
+    }
+}
+
+// ============================================
 // CONTACTS & CHATS
 // ============================================
 async function loadChats() {
@@ -592,6 +717,11 @@ document.addEventListener("DOMContentLoaded", async () => {
             loadChats();
         }
         
+        // Load profile if on profile or edit-profile page
+        if (currentPage === "profile.html" || currentPage === "edit-profile.html") {
+            await loadUserProfile();
+        }
+        
         // Initialize search on new-chat page (don't load all users)
         if (currentPage === "new-chat.html") {
             const searchInput = document.getElementById("newChatSearch");
@@ -629,6 +759,11 @@ window.openChat = openChat;
 window.startChatWithUser = startChatWithUser;
 window.searchContactsInput = searchContactsInput;
 window.searchContacts = searchContacts;
+window.loadUserProfile = loadUserProfile;
+window.saveProfile = saveProfile;
+window.editProfileName = editProfileName;
+window.editAbout = editAbout;
+window.changeProfilePhoto = changeProfilePhoto;
 window.toggleLoginPassword = toggleLoginPassword;
 window.toggleSignupPassword = toggleSignupPassword;
 window.toggleConfirmPassword = toggleConfirmPassword;
