@@ -528,6 +528,7 @@ async function loadMessages() {
         if (chatStatus) chatStatus.textContent = "online";
         
         const conversationId = getConversationId(auth.currentUser.uid, chatUid);
+        await markMessagesAsRead(conversationId);
         await markConversationRead(conversationId);
         await setupMessageListener(conversationId);
         
@@ -538,7 +539,7 @@ async function loadMessages() {
 
 async function setupMessageListener(conversationId) {
     try {
-        const { collection, query, orderBy, onSnapshot, doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const { collection, query, orderBy, onSnapshot } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
         
         const messagesRef = collection(db, "conversations", conversationId, "messages");
         const q = query(messagesRef, orderBy("createdAt", "asc"));
@@ -549,27 +550,7 @@ async function setupMessageListener(conversationId) {
             const messagesContainer = document.getElementById("messages");
             if (!messagesContainer) return;
 
-            const updates = [];
-            snapshot.forEach((messageDoc) => {
-                const message = messageDoc.data();
-                const isOwn = message.senderId === auth.currentUser.uid;
-
-                if (!isOwn && (message.status === "sent" || !message.status)) {
-                    updates.push(updateDoc(doc(db, "conversations", conversationId, "messages", messageDoc.id), {
-                        status: "delivered"
-                    }));
-                }
-
-                if (isOwn && message.status === "sent") {
-                    updates.push(updateDoc(doc(db, "conversations", conversationId, "messages", messageDoc.id), {
-                        status: "read"
-                    }));
-                }
-            });
-
-            if (updates.length > 0) {
-                await Promise.all(updates);
-            }
+            await markMessagesAsDelivered(conversationId);
 
             messagesContainer.innerHTML = "";
             snapshot.forEach((messageDoc) => {
@@ -600,6 +581,70 @@ function getStatusTicks(status) {
     if (status === "delivered") return "✓✓";
     if (status === "read") return "✓✓";
     return "✓";
+}
+
+async function markMessagesAsDelivered(conversationId) {
+    if (!firebaseInitialized || !auth?.currentUser || !conversationId) return;
+
+    try {
+        const { collection, getDocs, doc, writeBatch } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const messagesRef = collection(db, "conversations", conversationId, "messages");
+        const snapshot = await getDocs(messagesRef);
+
+        const batch = writeBatch(db);
+        snapshot.docs.forEach((messageDoc) => {
+            const message = messageDoc.data();
+            const isIncoming = message.senderId !== auth.currentUser.uid;
+            const needsDelivered = isIncoming && (message.status === "sent" || !message.status);
+
+            if (needsDelivered) {
+                batch.update(doc(db, "conversations", conversationId, "messages", messageDoc.id), {
+                    status: "delivered"
+                });
+            }
+        });
+
+        if (snapshot.docs.some(docSnap => {
+            const message = docSnap.data();
+            return message.senderId !== auth.currentUser.uid && (message.status === "sent" || !message.status);
+        })) {
+            await batch.commit();
+        }
+    } catch (error) {
+        console.warn("Could not update delivered status:", error);
+    }
+}
+
+async function markMessagesAsRead(conversationId) {
+    if (!firebaseInitialized || !auth?.currentUser || !conversationId) return;
+
+    try {
+        const { collection, getDocs, doc, writeBatch } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const messagesRef = collection(db, "conversations", conversationId, "messages");
+        const snapshot = await getDocs(messagesRef);
+
+        const batch = writeBatch(db);
+        snapshot.docs.forEach((messageDoc) => {
+            const message = messageDoc.data();
+            const isIncoming = message.senderId !== auth.currentUser.uid;
+            const needsRead = isIncoming && message.status !== "read";
+
+            if (needsRead) {
+                batch.update(doc(db, "conversations", conversationId, "messages", messageDoc.id), {
+                    status: "read"
+                });
+            }
+        });
+
+        if (snapshot.docs.some(docSnap => {
+            const message = docSnap.data();
+            return message.senderId !== auth.currentUser.uid && message.status !== "read";
+        })) {
+            await batch.commit();
+        }
+    } catch (error) {
+        console.warn("Could not update read status:", error);
+    }
 }
 
 async function sendMessage() {
@@ -887,6 +932,7 @@ async function openChat(uid) {
     localStorage.setItem("currentChatUid", uid);
 
     const conversationId = getConversationId(auth.currentUser.uid, uid);
+    await markMessagesAsRead(conversationId);
     await markConversationRead(conversationId);
 
     window.location.href = "chat.html";
