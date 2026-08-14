@@ -2961,6 +2961,20 @@ function openMenu() {
 document.addEventListener("DOMContentLoaded", async () => {
     console.log("📄 Page loaded");
 
+    if (location.protocol === "file:") {
+        const fileStatus = document.getElementById("firebaseStatus");
+        if (fileStatus) {
+            fileStatus.textContent = "⚠️ Run this app from a local web server: http://localhost:8080";
+            fileStatus.style.color = "#c33";
+        }
+        const loginStatus = document.getElementById("loginStatus") || document.getElementById("signupStatus");
+        if (loginStatus) {
+            loginStatus.textContent = "Firebase Auth needs HTTP/HTTPS and will not work from file://";
+            loginStatus.className = "status-message status-error";
+        }
+        return;
+    }
+
     // Apply dark mode if enabled
     applyDarkMode();
 
