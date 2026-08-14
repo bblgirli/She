@@ -522,16 +522,13 @@ async function loadMessages() {
     }
     
     try {
-        // Update header with chat info
         const chatHeader = document.querySelector(".chat-profile h3");
         const chatStatus = document.querySelector(".chat-profile p");
         if (chatHeader) chatHeader.textContent = chatName || "Chat";
         if (chatStatus) chatStatus.textContent = "online";
         
-        // Create conversation ID
-        const conversationId = [auth.currentUser.uid, chatUid].sort().join("_");
-        
-        // Setup real-time message listener
+        const conversationId = getConversationId(auth.currentUser.uid, chatUid);
+        await markConversationRead(conversationId);
         await setupMessageListener(conversationId);
         
     } catch (error) {
@@ -587,19 +584,25 @@ async function sendMessage() {
     }
     
     try {
-        const { collection, addDoc, serverTimestamp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const { collection, addDoc, doc, setDoc, serverTimestamp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
         
-        const conversationId = [auth.currentUser.uid, chatUid].sort().join("_");
+        const conversationId = getConversationId(auth.currentUser.uid, chatUid);
         
-        // Add message to Firestore
         await addDoc(collection(db, "conversations", conversationId, "messages"), {
             senderId: auth.currentUser.uid,
             receiverId: chatUid,
             text: text,
             createdAt: serverTimestamp()
         });
+
+        await setDoc(doc(db, "conversations", conversationId), {
+            participants: [auth.currentUser.uid, chatUid],
+            lastMessage: text,
+            lastMessageSenderId: auth.currentUser.uid,
+            updatedAt: serverTimestamp(),
+            unreadBy: [chatUid]
+        }, { merge: true });
         
-        // Clear input
         messageInput.value = "";
         messageInput.focus();
         
@@ -620,6 +623,23 @@ function escapeHTML(text) {
     const div = document.createElement("div");
     div.textContent = text;
     return div.innerHTML;
+}
+
+function getConversationId(uid1, uid2) {
+    return [uid1, uid2].sort().join("_");
+}
+
+async function markConversationRead(conversationId) {
+    if (!firebaseInitialized || !auth?.currentUser || !conversationId) return;
+
+    try {
+        const { doc, updateDoc, arrayRemove } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        await updateDoc(doc(db, "conversations", conversationId), {
+            unreadBy: arrayRemove(auth.currentUser.uid)
+        });
+    } catch (error) {
+        console.warn("Could not mark conversation as read:", error);
+    }
 }
 
 // Stub functions for other features
@@ -679,17 +699,24 @@ async function renderChatList() {
     
     let html = "";
     for (const chat of chats) {
-        const otherUid = chat.participants.find(uid => uid !== auth.currentUser.uid);
+        const otherUid = chat.participants?.find(uid => uid !== auth.currentUser.uid);
+        if (!otherUid) continue;
+
         const { getDocs, query, collection, where } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
-        
         const userSnap = await getDocs(query(collection(db, "users"), where("uid", "==", otherUid)));
         const otherUser = userSnap.docs[0]?.data() || { displayName: "Unknown" };
-        
+        const hasUnread = Array.isArray(chat.unreadBy) && chat.unreadBy.includes(auth.currentUser.uid);
+
         html += `
-            <div class="chat-item" onclick="openChat('${otherUid}')">
+            <div class="chat-item ${hasUnread ? "unread" : ""}" onclick="openChat('${otherUid}')">
                 <div class="chat-info">
-                    <h3>${otherUser.displayName || "User"}</h3>
-                    <p>${chat.lastMessage || "No messages yet"}</p>
+                    <div class="chat-top">
+                        <h3>${otherUser.displayName || "User"}</h3>
+                        ${hasUnread ? '<span class="unread">1</span>' : ""}
+                    </div>
+                    <div class="chat-bottom">
+                        <p>${chat.lastMessage || "No messages yet"}</p>
+                    </div>
                 </div>
             </div>
         `;
@@ -774,21 +801,19 @@ async function startChatWithUser(uid, displayName) {
     try {
         const { setDoc, doc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
         
-        // Create conversation ID
-        const conversationId = [auth.currentUser.uid, uid].sort().join("_");
+        const conversationId = getConversationId(auth.currentUser.uid, uid);
         
-        // Create/update conversation in Firestore
         await setDoc(doc(db, "conversations", conversationId), {
             participants: [auth.currentUser.uid, uid],
             lastMessage: "",
+            lastMessageSenderId: "",
+            unreadBy: [],
             updatedAt: new Date()
         }, { merge: true });
         
-        // Save uid to localStorage for chat.html to use
         localStorage.setItem("currentChatUid", uid);
         localStorage.setItem("currentChatName", displayName);
         
-        // Open chat.html
         window.location.href = "chat.html";
         
     } catch (error) {
@@ -800,6 +825,10 @@ async function startChatWithUser(uid, displayName) {
 async function openChat(uid) {
     currentChatUid = uid;
     localStorage.setItem("currentChatUid", uid);
+
+    const conversationId = getConversationId(auth.currentUser.uid, uid);
+    await markConversationRead(conversationId);
+
     window.location.href = "chat.html";
 }
 

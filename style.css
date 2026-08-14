@@ -269,8 +269,17 @@ button {
     transition: background 0.2s ease;
 }
 
+.chat-item.unread {
+    background: #f3fbf7;
+}
+
 .chat-item:active {
     background: #f4f4f4;
+}
+
+.chat-item.unread .chat-bottom p {
+    color: #111;
+    font-weight: 600;
 }
 
 .avatar {
