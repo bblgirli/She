@@ -270,7 +270,8 @@ button {
 }
 
 .chat-item.unread {
-    background: #f3fbf7;
+    background: linear-gradient(90deg, #eafaf2 0%, #f5fff9 100%);
+    border-left: 4px solid #0e9f6e;
     padding-left: 12px;
 }
 
@@ -284,11 +285,21 @@ button {
 
 .chat-item.unread .chat-top h3 {
     font-weight: 700;
+    color: #0b2a1c;
 }
 
 .chat-item.unread .chat-bottom p {
     color: #111;
     font-weight: 600;
+}
+
+.chat-item.unread .unread {
+    width: 24px;
+    height: 24px;
+    background: #0c9b67;
+    color: white;
+    font-weight: 700;
+    box-shadow: 0 2px 8px rgba(12, 155, 103, 0.3);
 }
 
 .avatar {
