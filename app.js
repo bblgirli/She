@@ -10,6 +10,8 @@ let auth = null;
 let db = null;
 let firebaseApp = null;
 let firebaseInitialized = false;
+let userDataCache = {}; // Cache user data to avoid re-fetching
+let firebaseModulesCache = {}; // Cache Firebase module imports
 
 // Contacts and chats
 let userContacts = [];
@@ -21,6 +23,7 @@ let presenceUnsubscribe = null;
 let typingUnsubscribe = null;
 let typingTimer = null;
 let shownNotificationIds = new Set(); // Track shown notifications to avoid duplicates
+let renderChatListDebounceTimer = null; // Debounce chat list rendering
 
 // Voice recording
 let mediaRecorder = null;
@@ -1407,10 +1410,20 @@ function handleEnter(event) {
 function handleMessageInput() {
     const chatUid = localStorage.getItem("currentChatUid");
     const value = document.getElementById("messageInput")?.value?.trim() || "";
+    const hasText = value.length > 0;
+
+    // Toggle button visibility based on input
+    const sendBtn = document.getElementById("sendBtn");
+    const cameraBtn = document.getElementById("cameraBtn");
+    const voiceBtn = document.getElementById("voiceBtn");
+    
+    if (sendBtn) sendBtn.style.display = hasText ? "flex" : "none";
+    if (cameraBtn) cameraBtn.style.display = hasText ? "none" : "flex";
+    if (voiceBtn) voiceBtn.style.display = hasText ? "none" : "flex";
 
     if (!chatUid || !firebaseInitialized || !auth?.currentUser) return;
 
-    if (value.length > 0) {
+    if (hasText) {
         if (typingTimer) clearTimeout(typingTimer);
         setTypingStatus(true, chatUid);
         typingTimer = setTimeout(() => {
@@ -2138,55 +2151,71 @@ async function loadChats() {
     }
 }
 
-async function renderChatList() {
+function renderChatList() {
     const container = document.getElementById("chatList") || document.querySelector(".chat-list");
     if (!container) return;
     
-    if (!chats || chats.length === 0) {
-        container.innerHTML = '<div class="message received"><p>No chats yet. Start a new chat!</p></div>';
-        return;
-    }
+    // Debounce rapid re-renders
+    if (renderChatListDebounceTimer) clearTimeout(renderChatListDebounceTimer);
+    renderChatListDebounceTimer = setTimeout(async () => {
+        if (!chats || chats.length === 0) {
+            container.innerHTML = '<div class="message received"><p>No chats yet. Start a new chat!</p></div>';
+            return;
+        }
+        
+        const sortedChats = [...chats].sort((a, b) => {
+            const aTime = a.updatedAt?.seconds ?? a.updatedAt?.toDate?.()?.getTime?.() / 1000 ?? 0;
+            const bTime = b.updatedAt?.seconds ?? b.updatedAt?.toDate?.()?.getTime?.() / 1000 ?? 0;
+            return bTime - aTime;
+        });
     
-    const sortedChats = [...chats].sort((a, b) => {
-        const aTime = a.updatedAt?.seconds ?? a.updatedAt?.toDate?.()?.getTime?.() / 1000 ?? 0;
-        const bTime = b.updatedAt?.seconds ?? b.updatedAt?.toDate?.()?.getTime?.() / 1000 ?? 0;
-        return bTime - aTime;
-    });
-
-    let html = "";
-    for (const chat of sortedChats) {
-        const otherUid = chat.participants?.find(uid => uid !== auth.currentUser.uid);
-        if (!otherUid) continue;
-
-        const { getDocs, query, collection, where } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
-        const userSnap = await getDocs(query(collection(db, "users"), where("uid", "==", otherUid)));
-        const otherUser = userSnap.docs[0]?.data() || { displayName: "Unknown" };
-        const unreadCount = Array.isArray(chat.unreadBy) ? chat.unreadBy.length : 0;
-        const hasUnread = unreadCount > 0;
-        const preview = getPreviewText(chat.lastMessage);
-        const lastTime = formatMessageTime(chat.lastMessageTime || chat.updatedAt);
-        const avatarMarkup = otherUser.photoData
-            ? `<img src="${otherUser.photoData}" alt="Profile photo" />`
-            : "👤";
-
-        html += `
-            <div class="chat-item ${hasUnread ? "unread" : ""}" onclick="openChat('${otherUid}')">
-                <div class="avatar chat-avatar">${avatarMarkup}</div>
-                <div class="chat-info">
-                    <div class="chat-top">
-                        <h3>${otherUser.displayName || "User"}</h3>
-                        <span class="message-time">${lastTime}</span>
-                    </div>
-                    <div class="chat-bottom">
-                        <p>${preview}</p>
-                        ${hasUnread ? `<span class="unread-badge">${unreadCount}</span>` : ""}
+        let html = "";
+        for (const chat of sortedChats) {
+            const otherUid = chat.participants?.find(uid => uid !== auth.currentUser.uid);
+            if (!otherUid) continue;
+    
+            // Check cache first
+            let otherUser = userDataCache[otherUid];
+            if (!otherUser) {
+                // Only fetch if not cached
+                try {
+                    const { getDocs, query, collection, where } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+                    const userSnap = await getDocs(query(collection(db, "users"), where("uid", "==", otherUid)));
+                    otherUser = userSnap.docs[0]?.data() || { displayName: "Unknown" };
+                    userDataCache[otherUid] = otherUser; // Cache it
+                } catch (error) {
+                    console.error("Error fetching user:", error);
+                    otherUser = { displayName: "Unknown" };
+                }
+            }
+            
+            const unreadCount = Array.isArray(chat.unreadBy) ? chat.unreadBy.length : 0;
+            const hasUnread = unreadCount > 0;
+            const preview = getPreviewText(chat.lastMessage);
+            const lastTime = formatMessageTime(chat.lastMessageTime || chat.updatedAt);
+            const avatarMarkup = otherUser.photoData
+                ? `<img src="${otherUser.photoData}" alt="Profile photo" />`
+                : "👤";
+    
+            html += `
+                <div class="chat-item ${hasUnread ? "unread" : ""}" onclick="openChat('${otherUid}')">
+                    <div class="avatar chat-avatar">${avatarMarkup}</div>
+                    <div class="chat-info">
+                        <div class="chat-top">
+                            <h3>${otherUser.displayName || "User"}</h3>
+                            <span class="message-time">${lastTime}</span>
+                        </div>
+                        <div class="chat-bottom">
+                            <p>${preview}</p>
+                            ${hasUnread ? `<span class="unread-badge">${unreadCount}</span>` : ""}
+                        </div>
                     </div>
                 </div>
-            </div>
-        `;
-    }
-    
-    container.innerHTML = html;
+            `;
+        }
+        
+        container.innerHTML = html;
+    }, 100);
 }
 
 async function searchContactsInput(event) {
