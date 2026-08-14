@@ -165,6 +165,53 @@
     <!-- Remote Audio -->
     <audio id="remoteAudio" autoplay playinline></audio>
 
+    <!-- Permissions Request Dialog -->
+    <div id="permissionsDialog" class="permissions-modal" style="display: none;">
+        <div class="permissions-container">
+            <h2>App Permissions</h2>
+            <p>She needs these permissions to work properly:</p>
+            
+            <div class="permission-item">
+                <input type="checkbox" id="perm-notification" checked disabled>
+                <label for="perm-notification">
+                    <strong>Notifications</strong>
+                    <span>Get message alerts and incoming call notifications</span>
+                </label>
+            </div>
+            
+            <div class="permission-item">
+                <input type="checkbox" id="perm-microphone" checked disabled>
+                <label for="perm-microphone">
+                    <strong>Microphone</strong>
+                    <span>Record voice messages and make calls</span>
+                </label>
+            </div>
+            
+            <div class="permission-item">
+                <input type="checkbox" id="perm-camera" checked disabled>
+                <label for="perm-camera">
+                    <strong>Camera</strong>
+                    <span>Take photos and set profile picture</span>
+                </label>
+            </div>
+            
+            <div class="permission-item">
+                <input type="checkbox" id="perm-media" checked disabled>
+                <label for="perm-media">
+                    <strong>Media & Files</strong>
+                    <span>Upload photos and share media</span>
+                </label>
+            </div>
+            
+            <div class="permissions-actions">
+                <button class="btn-allow" onclick="requestAllPermissions()">Allow All</button>
+                <button class="btn-skip" onclick="skipPermissions()">Skip for Now</button>
+            </div>
+            
+            <p class="permission-note">You can change these settings anytime in your browser settings.</p>
+        </div>
+    </div>
+
     <!-- Incoming Call Screen -->
     <div id="incomingCallScreen" class="call-screen incoming-call-screen" style="display: none;">
         <div class="call-screen-content">

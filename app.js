@@ -121,6 +121,21 @@ function showSuccess(message) {
     alert(message);
 }
 
+function showInfo(message) {
+    const statusElement = document.getElementById("pageStatus")
+        || document.getElementById("loginStatus")
+        || document.getElementById("signupStatus")
+        || document.getElementById("forgotStatus")
+        || document.getElementById("resetStatus");
+    
+    if (statusElement) {
+        statusElement.textContent = message;
+        statusElement.className = "status-message status-info";
+        return;
+    }
+    alert(message);
+}
+
 function clearStatus() {
     ["pageStatus", "loginStatus", "signupStatus", "forgotStatus", "resetStatus"].forEach((id) => {
         const el = document.getElementById(id);
@@ -1101,6 +1116,16 @@ async function setupMessageListener(conversationId) {
                             ${isOwn ? `<span class="status-ticks ${messageStatus}">${getStatusTicks(messageStatus)}</span>` : ""}
                         </div>
                     `;
+                } else if (message.imageData) {
+                    messageEl.innerHTML = `
+                        <div class="message-body">
+                            <img src="${message.imageData}" alt="Shared image" class="message-image" />
+                        </div>
+                        <div class="message-meta">
+                            <span class="message-time-inline">${messageTime}</span>
+                            ${isOwn ? `<span class="status-ticks ${messageStatus}">${getStatusTicks(messageStatus)}</span>` : ""}
+                        </div>
+                    `;
                 } else {
                     messageEl.innerHTML = `
                         <div class="message-body">
@@ -1452,29 +1477,37 @@ async function initiateCall() {
 }
 
 async function handleIncomingCall() {
-    if (!db) return;
+    if (!db || !auth?.currentUser) return;
     
-    const { query, where, onSnapshot, Query } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
-    const { collection } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
-    
-    // Listen for incoming calls in all conversations
-    const conversationsRef = collection(db, "users", auth.currentUser.uid, "activeConversations");
-    onSnapshot(conversationsRef, async (snapshot) => {
-        for (const convDoc of snapshot.docs) {
-            const conversationId = convDoc.id;
-            const callsRef = collection(db, "conversations", conversationId, "calls");
-            const q = query(callsRef, where("receiverId", "==", auth.currentUser.uid), where("status", "==", "calling"));
-            
-            onSnapshot(q, (callSnapshot) => {
-                callSnapshot.docChanges().forEach((change) => {
-                    if (change.type === "added" && !incomingCallData) {
-                        incomingCallData = { ...change.doc.data(), docId: change.doc.id, conversationId };
-                        showIncomingCallScreen();
-                    }
-                });
+    try {
+        const { collectionGroup, query, where, onSnapshot } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        
+        // Listen for incoming calls across all conversations using collectionGroup
+        const callsRef = collectionGroup(db, "calls");
+        const q = query(callsRef, where("receiverId", "==", auth.currentUser.uid), where("status", "==", "calling"));
+        
+        onSnapshot(q, (snapshot) => {
+            snapshot.docChanges().forEach((change) => {
+                if (change.type === "added" && !incomingCallData && !peerConnection) {
+                    const callData = change.doc.data();
+                    const docPath = change.doc.ref.path; // e.g., conversations/{id}/calls/{docId}
+                    const conversationId = docPath.split("/")[1];
+                    
+                    incomingCallData = { 
+                        ...callData, 
+                        docId: change.doc.id, 
+                        conversationId,
+                        docRef: change.doc.ref
+                    };
+                    console.log("Incoming call from:", callData.callerId, "in conversation:", conversationId);
+                    showIncomingCallScreen();
+                }
             });
-        }
-    });
+        });
+        
+    } catch (error) {
+        console.error("Error setting up incoming call listener:", error);
+    }
 }
 
 async function answerCall() {
@@ -1524,10 +1557,9 @@ async function answerCall() {
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
         
-        const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
-        const callDocRef = doc(db, "conversations", incomingCallData.conversationId, "calls", incomingCallData.docId);
+        const { updateDoc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
         
-        await updateDoc(callDocRef, {
+        await updateDoc(incomingCallData.docRef, {
             answer: answer.sdp,
             status: "connected",
             updatedAt: new Date()
@@ -1552,10 +1584,9 @@ async function declineCall() {
     if (!incomingCallData || !db) return;
     
     try {
-        const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
-        const callDocRef = doc(db, "conversations", incomingCallData.conversationId, "calls", incomingCallData.docId);
+        const { updateDoc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
         
-        await updateDoc(callDocRef, {
+        await updateDoc(incomingCallData.docRef, {
             status: "declined",
             updatedAt: new Date()
         });
@@ -1708,12 +1739,313 @@ function showEmoji() {
     showError("Emoji picker coming soon");
 }
 
-function attachFile() {
-    showError("File sharing coming soon");
+async function attachFile() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.style.display = "none";
+
+    input.onchange = async () => {
+        const file = input.files?.[0];
+        if (!file) return;
+
+        try {
+            // Compress image
+            const compressedData = await compressImage(file);
+            await sendImageMessage(compressedData);
+        } catch (error) {
+            console.error("Error sending image:", error);
+            showError("Failed to send image");
+        }
+    };
+
+    document.body.appendChild(input);
+    input.click();
+    input.remove();
 }
 
-function openCamera() {
-    showError("Camera feature coming soon");
+async function sendImageMessage(imageData) {
+    const chatUid = localStorage.getItem("currentChatUid");
+    
+    if (!chatUid || !firebaseInitialized || !auth?.currentUser) {
+        showError("Not in a chat");
+        return;
+    }
+    
+    try {
+        const { collection, addDoc, doc, setDoc, serverTimestamp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        
+        const conversationId = getConversationId(auth.currentUser.uid, chatUid);
+        
+        await addDoc(collection(db, "conversations", conversationId, "messages"), {
+            senderId: auth.currentUser.uid,
+            receiverId: chatUid,
+            text: "[Image]",
+            imageData: imageData,
+            createdAt: serverTimestamp(),
+            status: "sent"
+        });
+
+        await setDoc(doc(db, "conversations", conversationId), {
+            participants: [auth.currentUser.uid, chatUid],
+            lastMessage: "[Image]",
+            lastMessageSenderId: auth.currentUser.uid,
+            lastMessageTime: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            unreadBy: [chatUid]
+        }, { merge: true });
+        
+        showSuccess("Image sent!");
+        
+    } catch (error) {
+        console.error("Error sending image message:", error);
+        showError("Failed to send image");
+    }
+}
+
+function attachFile() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.style.display = "none";
+
+    input.onchange = async () => {
+        const file = input.files?.[0];
+        if (!file) return;
+
+        try {
+            // Compress image
+            const compressedData = await compressImage(file);
+            await sendImageMessage(compressedData);
+        } catch (error) {
+            console.error("Error sending image:", error);
+            showError("Failed to send image");
+        }
+    };
+
+    document.body.appendChild(input);
+    input.click();
+    input.remove();
+}
+
+async function openCamera() {
+    try {
+        // Request camera permission
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: "user" },
+            audio: false 
+        });
+        
+        // Create video element
+        const video = document.createElement("video");
+        video.srcObject = stream;
+        video.play();
+        
+        // Create canvas for capture
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        
+        // Set dimensions
+        canvas.width = 640;
+        canvas.height = 480;
+        
+        // Create modal with video feed
+        const modal = document.createElement("div");
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        `;
+        
+        video.style.cssText = `
+            width: 90%;
+            max-width: 500px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        `;
+        
+        const buttonContainer = document.createElement("div");
+        buttonContainer.style.cssText = `
+            display: flex;
+            gap: 10px;
+        `;
+        
+        const captureBtn = document.createElement("button");
+        captureBtn.textContent = "📷 Capture";
+        captureBtn.style.cssText = `
+            padding: 12px 24px;
+            background: #078b59;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+        `;
+        
+        const closeBtn = document.createElement("button");
+        closeBtn.textContent = "✕ Close";
+        closeBtn.style.cssText = `
+            padding: 12px 24px;
+            background: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+        `;
+        
+        captureBtn.onclick = () => {
+            video.play();
+            setTimeout(() => {
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                canvas.toBlob(async (blob) => {
+                    const reader = new FileReader();
+                    reader.onload = async (e) => {
+                        const photoData = e.target.result;
+                        
+                        // Use for profile photo
+                        const editPhotoURL = document.getElementById("editPhotoURL");
+                        if (editPhotoURL) editPhotoURL.value = photoData;
+                        
+                        const editProfilePhoto = document.getElementById("editProfilePhoto");
+                        if (editProfilePhoto) setAvatarElement(editProfilePhoto, photoData, "👤");
+                        
+                        // Close modal
+                        stream.getTracks().forEach(track => track.stop());
+                        document.body.removeChild(modal);
+                        
+                        showSuccess("Photo captured!");
+                    };
+                    reader.readAsDataURL(blob);
+                }, "image/jpeg", 0.8);
+            }, 100);
+        };
+        
+        closeBtn.onclick = () => {
+            stream.getTracks().forEach(track => track.stop());
+            document.body.removeChild(modal);
+        };
+        
+        buttonContainer.appendChild(captureBtn);
+        buttonContainer.appendChild(closeBtn);
+        
+        modal.appendChild(video);
+        modal.appendChild(buttonContainer);
+        document.body.appendChild(modal);
+        
+    } catch (error) {
+        console.error("Camera access error:", error);
+        if (error.name === "NotAllowedError") {
+            showError("Camera permission denied. Please enable in settings.");
+        } else if (error.name === "NotFoundError") {
+            showError("No camera found on this device");
+        } else {
+            showError("Failed to access camera");
+        }
+    }
+}
+
+async function requestAllPermissions() {
+    const permissions = [
+        { name: "notification", fn: requestNotificationPermission },
+        { name: "microphone", fn: requestMicrophonePermission },
+        { name: "camera", fn: requestCameraPermission },
+        { name: "media", fn: requestMediaPermission }
+    ];
+    
+    let grantedCount = 0;
+    
+    for (const perm of permissions) {
+        try {
+            const granted = await perm.fn();
+            if (granted) {
+                grantedCount++;
+                const checkbox = document.getElementById(`perm-${perm.name}`);
+                if (checkbox) checkbox.checked = true;
+            }
+        } catch (error) {
+            console.error(`Error requesting ${perm.name}:`, error);
+        }
+    }
+    
+    localStorage.setItem("permissionsRequested", "true");
+    setTimeout(() => {
+        const dialog = document.getElementById("permissionsDialog");
+        if (dialog) dialog.style.display = "none";
+    }, 1000);
+    
+    showSuccess(`Permissions: ${grantedCount}/${permissions.length} granted`);
+}
+
+async function skipPermissions() {
+    localStorage.setItem("permissionsRequested", "true");
+    const dialog = document.getElementById("permissionsDialog");
+    if (dialog) dialog.style.display = "none";
+    showInfo("You can enable permissions anytime from the menu");
+}
+
+async function requestMicrophonePermission() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(track => track.stop());
+        localStorage.setItem("microphonePermission", "granted");
+        return true;
+    } catch (error) {
+        console.error("Microphone permission denied:", error);
+        return false;
+    }
+}
+
+async function requestCameraPermission() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        stream.getTracks().forEach(track => track.stop());
+        localStorage.setItem("cameraPermission", "granted");
+        return true;
+    } catch (error) {
+        console.error("Camera permission denied:", error);
+        return false;
+    }
+}
+
+async function requestMediaPermission() {
+    // Media permission is typically granted by allowing file input
+    // We can use a hidden file input to test this
+    try {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "image/*,video/*";
+        
+        return new Promise((resolve) => {
+            input.onchange = () => {
+                localStorage.setItem("mediaPermission", "granted");
+                resolve(true);
+            };
+            input.click();
+            setTimeout(() => resolve(false), 5000);
+        });
+    } catch (error) {
+        console.error("Media permission error:", error);
+        return false;
+    }
+}
+
+function showPermissionsDialog() {
+    if (localStorage.getItem("permissionsRequested")) return;
+    
+    const dialog = document.getElementById("permissionsDialog");
+    if (dialog) {
+        dialog.style.display = "flex";
+    }
 }
 
 function sendVoiceMessage() {
@@ -2123,6 +2455,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             await setCurrentUserPresence(true);
             await loadMessages();
             handleIncomingCall();
+            showPermissionsDialog();
         }
         
         if (currentPage === "chats.html") {
@@ -2202,3 +2535,16 @@ window.showOngoingCallScreen = showOngoingCallScreen;
 window.hideOngoingCallScreen = hideOngoingCallScreen;
 window.startCallDurationTimer = startCallDurationTimer;
 window.loadCallHistory = loadCallHistory;
+window.openCamera = openCamera;
+window.requestAllPermissions = requestAllPermissions;
+window.skipPermissions = skipPermissions;
+window.requestNotificationPermission = requestNotificationPermission;
+window.requestMicrophonePermission = requestMicrophonePermission;
+window.requestCameraPermission = requestCameraPermission;
+window.requestMediaPermission = requestMediaPermission;
+window.showPermissionsDialog = showPermissionsDialog;
+window.attachFile = attachFile;
+window.sendImageMessage = sendImageMessage;
+window.showError = showError;
+window.showSuccess = showSuccess;
+window.showInfo = showInfo;
