@@ -197,6 +197,7 @@ async function initializeFirebase() {
         const errorMsg = error?.message || error?.toString() || "Unknown error";
         firebaseError = errorMsg;
         console.error("❌ initializeFirebase CATCH:", error);
+        setFirebaseFailure(errorMsg);
     } finally {
         firebaseInitCompleted = true;
         window.firebaseInitCompleted = true;
@@ -494,6 +495,20 @@ function clearStatus() {
 
 function isFirebaseReady() {
     return configured && auth && firebaseAuthModule;
+}
+
+function setFirebaseFailure(message) {
+    const finalMessage = message || "Firebase initialization failed.";
+    firebaseError = finalMessage;
+    firebaseInitCompleted = true;
+    window.firebaseInitCompleted = true;
+    window.showDebug("❌ Firebase failure: " + finalMessage);
+    const errorElement = document.getElementById("firebaseError");
+    if (errorElement) {
+        errorElement.style.display = "block";
+        errorElement.innerHTML = `<strong>Firebase Error:</strong><br>${escapeHTML(finalMessage)}`;
+    }
+    updateFirebaseStatus();
 }
 
 function updateFirebaseStatus() {
