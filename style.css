@@ -271,10 +271,19 @@ button {
 
 .chat-item.unread {
     background: #f3fbf7;
+    padding-left: 12px;
 }
 
 .chat-item:active {
     background: #f4f4f4;
+}
+
+.chat-item.unread .chat-info {
+    width: 100%;
+}
+
+.chat-item.unread .chat-top h3 {
+    font-weight: 700;
 }
 
 .chat-item.unread .chat-bottom p {

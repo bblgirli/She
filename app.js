@@ -625,6 +625,11 @@ function escapeHTML(text) {
     return div.innerHTML;
 }
 
+function getPreviewText(text) {
+    const safeText = text || "No messages yet";
+    return safeText.length > 30 ? safeText.slice(0, 30) + "..." : safeText;
+}
+
 function getConversationId(uid1, uid2) {
     return [uid1, uid2].sort().join("_");
 }
@@ -697,8 +702,14 @@ async function renderChatList() {
         return;
     }
     
+    const sortedChats = [...chats].sort((a, b) => {
+        const aTime = a.updatedAt?.seconds ?? a.updatedAt?.toDate?.()?.getTime?.() / 1000 ?? 0;
+        const bTime = b.updatedAt?.seconds ?? b.updatedAt?.toDate?.()?.getTime?.() / 1000 ?? 0;
+        return bTime - aTime;
+    });
+
     let html = "";
-    for (const chat of chats) {
+    for (const chat of sortedChats) {
         const otherUid = chat.participants?.find(uid => uid !== auth.currentUser.uid);
         if (!otherUid) continue;
 
@@ -706,6 +717,7 @@ async function renderChatList() {
         const userSnap = await getDocs(query(collection(db, "users"), where("uid", "==", otherUid)));
         const otherUser = userSnap.docs[0]?.data() || { displayName: "Unknown" };
         const hasUnread = Array.isArray(chat.unreadBy) && chat.unreadBy.includes(auth.currentUser.uid);
+        const preview = getPreviewText(chat.lastMessage);
 
         html += `
             <div class="chat-item ${hasUnread ? "unread" : ""}" onclick="openChat('${otherUid}')">
@@ -715,7 +727,7 @@ async function renderChatList() {
                         ${hasUnread ? '<span class="unread">1</span>' : ""}
                     </div>
                     <div class="chat-bottom">
-                        <p>${chat.lastMessage || "No messages yet"}</p>
+                        <p>${preview}</p>
                     </div>
                 </div>
             </div>
