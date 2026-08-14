@@ -522,6 +522,7 @@ function updateFirebaseStatus() {
         if (errorElement) {
             errorElement.style.display = "block";
             errorElement.innerHTML = `<strong>Firebase Error:</strong><br>${escapeHTML(firebaseError)}`;
+            errorElement.scrollIntoView({ behavior: "smooth", block: "nearest" });
         }
         if (googleButton) googleButton.disabled = false; // Allow fallback login
         return;
