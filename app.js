@@ -14,10 +14,7 @@ window.showDebug = function(msg) {
 
 // Log immediately when script loads
 window.showDebug("app.js loaded");
-const statusElement = document.getElementById("firebaseStatus");
-if (statusElement) {
-    statusElement.textContent = "APP.JS LOADED";
-}
+document.body.dataset.appLoaded = "yes";
 
 const STORAGE_KEY = "she_app_state";
 const CURRENT_USER_KEY = "she_current_user";
