@@ -2559,3 +2559,227 @@ audio {
     }
 }
 
+/* ============================================ */
+/* DARK MODE THEME */
+/* ============================================ */
+
+:root {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f5f5f5;
+    --text-primary: #000000;
+    --text-secondary: #666666;
+    --border-color: #e0e0e0;
+    --header-bg: #ffffff;
+    --chat-bg: #ffffff;
+    --message-received-bg: #e0e0e0;
+    --message-sent-bg: #078b59;
+    --message-text-received: #000000;
+    --message-text-sent: #ffffff;
+    --input-bg: #ffffff;
+    --input-border: #e0e0e0;
+    --input-text: #000000;
+    --nav-bg: #ffffff;
+    --nav-border: #e0e0e0;
+}
+
+[data-theme="dark"] {
+    --bg-primary: #0a0e27;
+    --bg-secondary: #1a1f3a;
+    --text-primary: #ffffff;
+    --text-secondary: #b0b0b0;
+    --border-color: #333333;
+    --header-bg: #1a1f3a;
+    --chat-bg: #0a0e27;
+    --message-received-bg: #262f4a;
+    --message-sent-bg: #078b59;
+    --message-text-received: #ffffff;
+    --message-text-sent: #ffffff;
+    --input-bg: #1a1f3a;
+    --input-border: #333333;
+    --input-text: #ffffff;
+    --nav-bg: #1a1f3a;
+    --nav-border: #333333;
+}
+
+/* Apply dark mode to main elements */
+[data-theme="dark"] .phone-app {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .app-header {
+    background: var(--header-bg);
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+[data-theme="dark"] .chat-list {
+    background: var(--chat-bg);
+}
+
+[data-theme="dark"] .chat-item {
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+[data-theme="dark"] .chat-name,
+[data-theme="dark"] .chat-status {
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .chat-preview {
+    color: var(--text-secondary);
+}
+
+[data-theme="dark"] .chat-time {
+    color: var(--text-secondary);
+}
+
+[data-theme="dark"] .message.received {
+    background: var(--message-received-bg);
+    color: var(--message-text-received);
+}
+
+[data-theme="dark"] .message.sent {
+    background: var(--message-sent-bg);
+    color: var(--message-text-sent);
+}
+
+[data-theme="dark"] .messages {
+    background: var(--bg-primary);
+}
+
+[data-theme="dark"] .message-footer {
+    background: var(--header-bg);
+    border-top: 1px solid var(--border-color);
+}
+
+[data-theme="dark"] .message-input {
+    background: var(--input-bg);
+    color: var(--input-text);
+    border: 1px solid var(--input-border);
+}
+
+[data-theme="dark"] .message-input::placeholder {
+    color: var(--text-secondary);
+}
+
+[data-theme="dark"] .bottom-nav {
+    background: var(--nav-bg);
+    border-top: 1px solid var(--nav-border);
+}
+
+[data-theme="dark"] .nav-item {
+    color: var(--text-secondary);
+}
+
+[data-theme="dark"] .nav-item.active {
+    color: #078b59;
+}
+
+[data-theme="dark"] .settings-list,
+[data-theme="dark"] .calls-list,
+[data-theme="dark"] .contacts-list,
+[data-theme="dark"] .status-list {
+    background: var(--bg-primary);
+}
+
+[data-theme="dark"] .setting-item,
+[data-theme="dark"] .call-history-item,
+[data-theme="dark"] .contact-item,
+[data-theme="dark"] .status-item {
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+[data-theme="dark"] .setting-item h3,
+[data-theme="dark"] .call-history-item h3,
+[data-theme="dark"] .contact-item h3 {
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .setting-item p,
+[data-theme="dark"] .call-history-item p,
+[data-theme="dark"] .contact-item p {
+    color: var(--text-secondary);
+}
+
+[data-theme="dark"] input,
+[data-theme="dark"] textarea,
+[data-theme="dark"] select {
+    background: var(--input-bg);
+    color: var(--input-text);
+    border: 1px solid var(--input-border);
+}
+
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder {
+    color: var(--text-secondary);
+}
+
+[data-theme="dark"] .search-bar input {
+    background: var(--input-bg);
+    color: var(--input-text);
+    border: 1px solid var(--input-border);
+}
+
+[data-theme="dark"] .chat-tabs {
+    background: var(--header-bg);
+    border-bottom: 1px solid var(--border-color);
+}
+
+[data-theme="dark"] .chat-tabs button {
+    color: var(--text-secondary);
+    border-bottom: 2px solid transparent;
+}
+
+[data-theme="dark"] .chat-tabs button.active {
+    color: #078b59;
+    border-bottom-color: #078b59;
+}
+
+[data-theme="dark"] .modal {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .modal-header {
+    background: var(--header-bg);
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+[data-theme="dark"] .simple-header {
+    background: var(--header-bg);
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+[data-theme="dark"] .group-suggestions {
+    background: var(--bg-primary);
+}
+
+[data-theme="dark"] .group-suggestion-item {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .status-item {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+}
+
+[data-theme="dark"] button {
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Ensure proper contrast for dark mode */
+[data-theme="dark"] .logout-button {
+    background: #d32f2f;
+    color: white;
+}
+
+[data-theme="dark"] .logout-button:hover {
+    background: #b71c1c;
+}
+

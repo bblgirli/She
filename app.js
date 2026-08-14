@@ -2191,6 +2191,7 @@ function renderChatList() {
             
             const unreadCount = Array.isArray(chat.unreadBy) ? chat.unreadBy.length : 0;
             const hasUnread = unreadCount > 0;
+            const isGroup = chat.isGroup || false;
             const preview = getPreviewText(chat.lastMessage);
             const lastTime = formatMessageTime(chat.lastMessageTime || chat.updatedAt);
             const avatarMarkup = otherUser.photoData
@@ -2198,7 +2199,10 @@ function renderChatList() {
                 : "👤";
     
             html += `
-                <div class="chat-item ${hasUnread ? "unread" : ""}" onclick="openChat('${otherUid}')">
+                <div class="chat-item ${hasUnread ? "unread" : ""}" 
+                     data-is-group="${isGroup}" 
+                     data-is-favorite="false"
+                     onclick="openChat('${otherUid}')">
                     <div class="avatar chat-avatar">${avatarMarkup}</div>
                     <div class="chat-info">
                         <div class="chat-top">
@@ -2787,10 +2791,164 @@ function goTo(page) {
 }
 
 // ============================================
+// SETTINGS FEATURES (Dark Mode, Notifications, etc)
+// ============================================
+
+// DARK MODE TOGGLE
+function toggleDarkMode() {
+    const isDarkMode = localStorage.getItem("darkMode") === "true";
+    const newDarkMode = !isDarkMode;
+    localStorage.setItem("darkMode", newDarkMode);
+    
+    if (newDarkMode) {
+        document.documentElement.setAttribute("data-theme", "dark");
+        showSuccess("🌙 Dark Mode Enabled");
+    } else {
+        document.documentElement.removeAttribute("data-theme");
+        showSuccess("☀️ Light Mode Enabled");
+    }
+}
+
+// Apply dark mode on page load
+function applyDarkMode() {
+    if (localStorage.getItem("darkMode") === "true") {
+        document.documentElement.setAttribute("data-theme", "dark");
+    }
+}
+
+// NOTIFICATIONS SETTINGS
+function toggleNotifications() {
+    const notificationsEnabled = localStorage.getItem("notificationsEnabled") !== "false";
+    const newState = !notificationsEnabled;
+    localStorage.setItem("notificationsEnabled", newState);
+    
+    if (newState) {
+        showSuccess("🔔 Notifications Enabled");
+    } else {
+        showSuccess("🔕 Notifications Disabled");
+    }
+}
+
+function openNotifications() {
+    const notificationsEnabled = localStorage.getItem("notificationsEnabled") !== "false";
+    showInfo(`Notifications are currently ${notificationsEnabled ? "enabled" : "disabled"}. Tap again to toggle.`);
+}
+
+// FAVORITES FEATURES
+async function addToFavorites(chatUid) {
+    if (!auth?.currentUser) return;
+    
+    try {
+        const { doc, updateDoc, arrayUnion } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        
+        await updateDoc(doc(db, "users", auth.currentUser.uid), {
+            favorites: arrayUnion(chatUid)
+        });
+        
+        showSuccess("⭐ Added to Favorites");
+        renderChatList(); // Re-render to update UI
+    } catch (error) {
+        console.error("Error adding to favorites:", error);
+    }
+}
+
+async function removeFromFavorites(chatUid) {
+    if (!auth?.currentUser) return;
+    
+    try {
+        const { doc, updateDoc, arrayRemove } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        
+        await updateDoc(doc(db, "users", auth.currentUser.uid), {
+            favorites: arrayRemove(chatUid)
+        });
+        
+        showSuccess("⭐ Removed from Favorites");
+        renderChatList(); // Re-render to update UI
+    } catch (error) {
+        console.error("Error removing from favorites:", error);
+    }
+}
+
+// UNREAD MESSAGES
+async function markChatAsRead(conversationId) {
+    if (!auth?.currentUser) return;
+    
+    try {
+        const { doc, updateDoc, arrayRemove } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        
+        await updateDoc(doc(db, "conversations", conversationId), {
+            unreadBy: arrayRemove(auth.currentUser.uid)
+        });
+    } catch (error) {
+        console.error("Error marking chat as read:", error);
+    }
+}
+
+// CHAT FILTERING
+function filterChatsByTab(filter) {
+    const tabs = document.querySelectorAll(".chat-tabs button");
+    tabs.forEach(tab => tab.classList.remove("active"));
+    
+    // Find and activate the clicked tab
+    event?.target?.classList?.add("active");
+    
+    const allChats = document.querySelectorAll(".chat-item");
+    
+    if (filter === "unread") {
+        allChats.forEach(chat => {
+            const unreadBadge = chat.querySelector(".unread-badge");
+            chat.style.display = unreadBadge ? "flex" : "none";
+        });
+    } else if (filter === "favorites") {
+        allChats.forEach(chat => {
+            const isFavorite = chat.dataset.isFavorite === "true";
+            chat.style.display = isFavorite ? "flex" : "none";
+        });
+    } else if (filter === "groups") {
+        allChats.forEach(chat => {
+            const isGroup = chat.dataset.isGroup === "true";
+            chat.style.display = isGroup ? "flex" : "none";
+        });
+    } else { // "all"
+        allChats.forEach(chat => {
+            chat.style.display = "flex";
+        });
+    }
+}
+
+// SETTINGS MODALS
+function openPrivacy() {
+    showInfo("🔐 Privacy Settings\\n\\nControl who can see your:\\n• Last seen\\n• Profile photo\\n• Status updates\\n\\nTap to modify settings");
+}
+
+function openSecurity() {
+    showInfo("🛡️ Security Settings\\n\\nSecurity notifications:\\n• Login alerts\\n• Device activity\\n• Suspicious access attempts");
+}
+
+function openChatSettings() {
+    showInfo("💬 Chat Settings\\n\\n• Theme: Light/Dark\\n• Wallpaper\\n• Chat backup\\n• Delete old messages automatically");
+}
+
+function openStorage() {
+    showInfo("💾 Storage & Data\\n\\n• Network usage\\n• Storage used\\n• Auto-download media\\n• Clear cache");
+}
+
+function openHelp() {
+    showInfo("❓ Help Center\\n\\nFAQ, tutorials, and support options available.\\n\\nContact support for additional help.");
+}
+
+function openMenu() {
+    showInfo("📋 Menu Options\\n\\n• Search\\n• Settings\\n• Help\\n• About");
+}
+
+// ============================================
 // PAGE INITIALIZATION
 // ============================================
 document.addEventListener("DOMContentLoaded", async () => {
     console.log("📄 Page loaded");
+
+    // Apply dark mode if enabled
+    applyDarkMode();
 
     document.addEventListener("contextmenu", (event) => {
         const target = event.target;
@@ -2990,3 +3148,17 @@ window.sendImageMessage = sendImageMessage;
 window.showError = showError;
 window.showSuccess = showSuccess;
 window.showInfo = showInfo;
+window.toggleDarkMode = toggleDarkMode;
+window.toggleNotifications = toggleNotifications;
+window.openNotifications = openNotifications;
+window.addToFavorites = addToFavorites;
+window.removeFromFavorites = removeFromFavorites;
+window.markChatAsRead = markChatAsRead;
+window.filterChatsByTab = filterChatsByTab;
+window.openPrivacy = openPrivacy;
+window.openSecurity = openSecurity;
+window.openChatSettings = openChatSettings;
+window.openStorage = openStorage;
+window.openHelp = openHelp;
+window.openMenu = openMenu;
+window.applyDarkMode = applyDarkMode;

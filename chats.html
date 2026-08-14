@@ -44,19 +44,19 @@
 
     <div class="chat-tabs">
 
-        <button class="active">
+        <button class="active" onclick="filterChatsByTab('all')">
             All
         </button>
 
-        <button>
+        <button onclick="filterChatsByTab('unread')">
             Unread
         </button>
 
-        <button>
+        <button onclick="filterChatsByTab('favorites')">
             Favorites
         </button>
 
-        <button>
+        <button onclick="filterChatsByTab('groups')">
             Groups
         </button>
 
@@ -85,14 +85,14 @@
         </button>
         <button
             class="nav-item"
-            onclick="alert('Calls page coming next')"
+            onclick="goTo('calls.html')"
         >
             <span>📞</span>
             <small>Calls</small>
         </button>
         <button
             class="nav-item"
-            onclick="alert('Status page coming next')"
+            onclick="goTo('status.html')"
         >
             <span>◉</span>
             <small>Status</small>
@@ -100,7 +100,7 @@
         </button>
         <button
             class="nav-item"
-            onclick="alert('Contacts page coming next')"
+            onclick="goTo('contacts.html')"
         >
             <span>👤</span>
             <small>Contacts</small>
