@@ -1019,11 +1019,17 @@ async function setupMessageListener(conversationId) {
                 if (message.audioData) {
                     messageEl.innerHTML = `
                         <div class="message-body">
-                            <div class="audio-message">
-                                <button class="audio-play-btn" onclick="playAudio('${messageDoc.id}', this)">▶️</button>
-                                <audio id="audio-${messageDoc.id}" style="display: none;">
+                            <div class="voice-note-bubble">
+                                <button class="voice-play-btn" onclick="playAudio('${messageDoc.id}', this)">▶️</button>
+                                <audio id="audio-${messageDoc.id}" class="audio-player" onloadedmetadata="updateAudioDuration('${messageDoc.id}')">
                                     <source src="${message.audioData}" type="audio/webm" />
                                 </audio>
+                                <div class="voice-info">
+                                    <div class="voice-progress">
+                                        <div class="voice-progress-bar"></div>
+                                    </div>
+                                    <span class="voice-duration" id="duration-${messageDoc.id}">0:00</span>
+                                </div>
                             </div>
                         </div>
                         <div class="message-meta">
@@ -1061,6 +1067,21 @@ function playAudio(messageId, buttonEl) {
     if (audio.paused) {
         audio.play();
         buttonEl.textContent = "⏸️";
+        
+        // Update progress bar
+        const updateInterval = setInterval(() => {
+            if (audio.paused || audio.ended) {
+                clearInterval(updateInterval);
+                buttonEl.textContent = "▶️";
+                return;
+            }
+            
+            const progress = document.querySelector(`#audio-${messageId}`).nextElementSibling?.querySelector(".voice-progress-bar");
+            if (progress && audio.duration) {
+                const percent = (audio.currentTime / audio.duration) * 100;
+                progress.style.width = percent + "%";
+            }
+        }, 100);
     } else {
         audio.pause();
         buttonEl.textContent = "▶️";
@@ -1069,6 +1090,17 @@ function playAudio(messageId, buttonEl) {
     audio.onended = () => {
         buttonEl.textContent = "▶️";
     };
+}
+
+function updateAudioDuration(messageId) {
+    const audio = document.getElementById(`audio-${messageId}`);
+    const durationEl = document.getElementById(`duration-${messageId}`);
+    
+    if (audio && durationEl && audio.duration) {
+        const mins = Math.floor(audio.duration / 60);
+        const secs = Math.floor(audio.duration % 60);
+        durationEl.textContent = `${mins}:${secs.toString().padStart(2, "0")}`;
+    }
 }
 
 function getStatusTicks(status) {
@@ -1670,5 +1702,6 @@ window.startVoiceRecording = startVoiceRecording;
 window.stopVoiceRecording = stopVoiceRecording;
 window.toggleLockRecording = toggleLockRecording;
 window.playAudio = playAudio;
+window.updateAudioDuration = updateAudioDuration;
 window.startCall = startCall;
 window.startVideoCall = startVideoCall;

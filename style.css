@@ -846,6 +846,92 @@ audio {
     color: #078b59;
 }
 
+/* VOICE NOTE BUBBLE */
+
+.voice-note-bubble {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 18px;
+    min-width: 200px;
+    max-width: 260px;
+}
+
+.message.sent .voice-note-bubble {
+    background: rgba(12, 155, 103, 0.1);
+}
+
+.message.received .voice-note-bubble {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.voice-play-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #078b59;
+    color: white;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    padding: 0;
+    border: none;
+    cursor: pointer;
+}
+
+.message.received .voice-play-btn {
+    background: white;
+    color: #078b59;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.voice-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.voice-progress {
+    height: 4px;
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 4px;
+}
+
+.message.sent .voice-progress {
+    background: rgba(12, 155, 103, 0.2);
+}
+
+.voice-progress-bar {
+    height: 100%;
+    background: #078b59;
+    width: 0%;
+    border-radius: 2px;
+    transition: width 0.1s linear;
+}
+
+.message.received .voice-progress-bar {
+    background: #078b59;
+}
+
+.voice-duration {
+    font-size: 12px;
+    color: #666;
+    font-weight: 500;
+}
+
+.message.sent .voice-duration {
+    color: #0d6b4a;
+}
+
+.message.received .voice-duration {
+    color: #555;
+}
+
 
 /* DESKTOP */
 
