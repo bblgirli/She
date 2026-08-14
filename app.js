@@ -58,19 +58,24 @@ let firebaseInitCompleted = false;  // Track if init finished (success or failur
 const FIREBASE_INIT_TIMEOUT_MS = 10000;
 
 async function initializeFirebaseCore() {
+    console.log("initializeFirebaseCore: start", { configured, auth: !!auth, db: !!db, firebaseAuthModule: !!firebaseAuthModule });
+
     if (!configured) {
         const message = "Firebase is not configured. Check firebase-config.js.";
         firebaseError = message;
+        console.log("initializeFirebaseCore: not configured");
         window.showDebug("❌ ERROR: " + message);
         return;
     }
 
     if (auth || db) {
+        console.log("initializeFirebaseCore: already initialized; returning early");
         firebaseError = null;
         return;
     }
 
     try {
+        console.log("initializeFirebaseCore: before module imports");
         window.showDebug("🔥 Loading Firebase modules...");
 
         const loaders = [
@@ -86,32 +91,44 @@ async function initializeFirebaseCore() {
             })
         ]);
 
+        console.log("initializeFirebaseCore: modules loaded");
         const [appModule, authModule, firestoreModule] = modules;
 
         window.showDebug("✅ Modules loaded");
         firebaseAuthModule = authModule;
         firebaseFirestoreModule = firestoreModule;
 
+        console.log("initializeFirebaseCore: before app init");
         window.showDebug("🔥 Initializing Firebase app...");
         firebaseApp = appModule.initializeApp(firebaseConfig);
         auth = authModule.getAuth(firebaseApp);
         window.showDebug("✅ Auth initialized");
+        console.log("initializeFirebaseCore: auth initialized");
 
+        console.log("initializeFirebaseCore: before persistence");
         window.showDebug("🔥 Setting persistence...");
         await Promise.race([
             firebaseAuthModule.setPersistence(auth, firebaseAuthModule.browserLocalPersistence),
             new Promise((_, reject) => {
                 setTimeout(() => reject(new Error("Firebase auth persistence setup timed out after 10 seconds.")), FIREBASE_INIT_TIMEOUT_MS);
             })
-        ]).catch((e) => window.showDebug("⚠️ " + e.message));
+        ]).catch((e) => {
+            console.log("initializeFirebaseCore: persistence warning", e?.message || e);
+            window.showDebug("⚠️ " + e.message);
+        });
         window.showDebug("✅ Persistence set");
+        console.log("initializeFirebaseCore: persistence done");
 
+        console.log("initializeFirebaseCore: before Firestore getFirestore");
         window.showDebug("🔥 Getting Firestore...");
         db = firestoreModule.getFirestore(firebaseApp);
         window.showDebug("✅ Firestore initialized");
+        console.log("initializeFirebaseCore: Firestore ready");
 
+        console.log("initializeFirebaseCore: before auth listener");
         window.showDebug("🔥 Setting up auth listener...");
         firebaseAuthModule.onAuthStateChanged(auth, (user) => {
+            console.log("onAuthStateChanged fired", user ? user.uid : "no user");
             window.showDebug("Auth: " + (user ? user.uid : "no user"));
             handleFirebaseAuthState(user);
             if (!authStateResolved) {
@@ -123,10 +140,13 @@ async function initializeFirebaseCore() {
             }
         });
         window.showDebug("✅ Auth listener ready");
+        console.log("initializeFirebaseCore: listener ready");
 
+        console.log("initializeFirebaseCore: before redirect result check");
         window.showDebug("🔥 Checking redirect result...");
         try {
             const redirectResult = await firebaseAuthModule.getRedirectResult(auth);
+            console.log("initializeFirebaseCore: redirectResult", redirectResult ? "present" : "none");
             if (redirectResult?.user) {
                 window.showDebug("✅ Redirect: " + redirectResult.user.uid);
                 const signedInUser = getFirebaseUserData(redirectResult.user);
@@ -144,14 +164,17 @@ async function initializeFirebaseCore() {
                 window.showDebug("ℹ️ No redirect result");
             }
         } catch (e) {
+            console.log("initializeFirebaseCore: redirect result error", e?.message || e);
             window.showDebug("⚠️ Redirect error: " + e.message);
         }
 
         firebaseError = null;
+        console.log("initializeFirebaseCore: finished successfully");
         window.showDebug("✅ Firebase READY!");
     } catch (error) {
         const errorMsg = error?.message || error?.toString() || "Unknown Firebase error";
         firebaseError = errorMsg;
+        console.log("initializeFirebaseCore: caught error", errorMsg);
         window.showDebug("❌ ERROR: " + errorMsg);
         configured = false;
     }
@@ -477,13 +500,24 @@ function updateFirebaseStatus() {
     const statusElement = document.getElementById("firebaseStatus");
     const errorElement = document.getElementById("firebaseError");
     const googleButton = document.querySelector(".google-button");
-    
+
+    console.log("updateFirebaseStatus: called", {
+        firebaseInitCompleted,
+        firebaseError,
+        hasAuth: !!auth,
+        hasDb: !!db,
+        hasAuthModule: !!firebaseAuthModule,
+        statusText: statusElement ? statusElement.textContent : null
+    });
+
     if (!statusElement) {
+        console.log("updateFirebaseStatus: no status element found");
         return;
     }
 
     // Show error if exists
     if (firebaseError) {
+        console.log("updateFirebaseStatus: showing firebaseError branch");
         statusElement.textContent = "❌ " + firebaseError;
         if (errorElement) {
             errorElement.style.display = "block";
@@ -495,6 +529,7 @@ function updateFirebaseStatus() {
 
     // Show initialization status
     if (!firebaseInitCompleted) {
+        console.log("updateFirebaseStatus: still loading / firebaseInitCompleted false");
         statusElement.textContent = "⏳ Loading Firebase...";
         if (googleButton) googleButton.disabled = true;
         return;
@@ -502,10 +537,12 @@ function updateFirebaseStatus() {
 
     // Firebase initialized - check what's available
     if (auth && firebaseAuthModule && db) {
+        console.log("updateFirebaseStatus: firebase ready");
         statusElement.textContent = "✅ Firebase Ready";
         if (googleButton) googleButton.disabled = false;
         if (errorElement) errorElement.style.display = "none";
     } else {
+        console.log("updateFirebaseStatus: firebase unavailable / local fallback branch");
         statusElement.textContent = "⚠️ Local Mode (Firebase unavailable)";
         if (googleButton) googleButton.disabled = false;
         if (errorElement) {
