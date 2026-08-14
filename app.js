@@ -1576,18 +1576,26 @@ async function initializeApp() {
     updateFirebaseStatus();
 
     try {
+        const statusElement = document.getElementById("firebaseStatus");
+        if (statusElement) {
+            statusElement.textContent = "FIREBASE STARTED";
+        }
         console.log("Starting Firebase initialization");
         const initResult = await initializeFirebase();
+        const statusElementDone = document.getElementById("firebaseStatus");
+        if (statusElementDone) {
+            statusElementDone.textContent = "FIREBASE DONE";
+        }
         console.log("Firebase initialization finished", initResult);
         updateFirebaseStatus();
     } catch (error) {
+        const statusElement = document.getElementById("firebaseStatus");
+        if (statusElement) {
+            statusElement.textContent = "FIREBASE ERROR: " + (error?.message || String(error));
+        }
         const errorMsg = error?.stack || error?.message || error?.toString() || "Unknown Firebase startup error";
         firebaseError = errorMsg;
         console.error("❌ Firebase startup error in initializeApp():", error);
-        const statusElement = document.getElementById("firebaseStatus");
-        if (statusElement) {
-            statusElement.textContent = errorMsg;
-        }
         updateFirebaseStatus();
     }
 
