@@ -480,6 +480,7 @@ async function loadUserProfile() {
         
         if (userDoc.exists()) {
             const userData = userDoc.data();
+            const localPhotoURL = getProfilePhotoFromStorage(auth.currentUser.uid);
             
             // Display on profile page
             const profileName = document.getElementById("profileName");
@@ -494,7 +495,7 @@ async function loadUserProfile() {
             if (profileEmail) profileEmail.textContent = userData.email || "";
             if (profilePhone) profilePhone.textContent = userData.phone || "Not set";
             if (profileAbout) profileAbout.textContent = userData.about || "Available";
-            setAvatarElement(profilePhoto, userData.photoURL, "👤");
+            setAvatarElement(profilePhoto, localPhotoURL, "👤");
             
             // Load into edit page
             const editName = document.getElementById("editName");
@@ -505,9 +506,9 @@ async function loadUserProfile() {
             
             if (editName) editName.value = userData.displayName || "";
             if (editAbout) editAbout.value = userData.about || "";
-            if (editPhotoURL) editPhotoURL.value = userData.photoURL || "";
+            if (editPhotoURL) editPhotoURL.value = localPhotoURL ? "[Photo stored locally]" : "";
             if (editPhone) editPhone.value = userData.phone || "";
-            setAvatarElement(editProfilePhoto, userData.photoURL, "👤");
+            setAvatarElement(editProfilePhoto, localPhotoURL, "👤");
             
             return userData;
         }
@@ -571,7 +572,7 @@ function editAbout() {
     window.location.href = "edit-profile.html";
 }
 
-async function compressImage(file, maxWidth = 200, maxHeight = 200, quality = 0.5) {
+async function compressImage(file, maxWidth = 150, maxHeight = 150, quality = 0.4) {
     return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = (event) => {
@@ -620,7 +621,19 @@ async function uploadProfilePhoto(file) {
         return "";
     }
 
-    return await compressImage(file, 200, 200, 0.5);
+    const compressedURL = await compressImage(file, 150, 150, 0.4);
+    if (!compressedURL) return "";
+
+    // Store in localStorage instead of Firestore
+    const storageKey = `profilePhoto_${auth.currentUser.uid}`;
+    localStorage.setItem(storageKey, compressedURL);
+
+    return compressedURL;
+}
+
+function getProfilePhotoFromStorage(uid) {
+    const storageKey = `profilePhoto_${uid}`;
+    return localStorage.getItem(storageKey) || "";
 }
 
 async function changeProfilePhoto() {
