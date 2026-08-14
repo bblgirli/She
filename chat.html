@@ -81,9 +81,6 @@
         class="messages"
         id="messages"
     >
-        <div class="message received">
-            <p>Select a contact to start chatting.</p>
-        </div>
     </main>
 
 
@@ -104,6 +101,10 @@
                 autocomplete="off"
                 onkeydown="handleEnter(event)"
             >
+
+            <button onclick="sendMessage()">
+                ✈️
+            </button>
 
             <button onclick="attachFile()">
                 📎

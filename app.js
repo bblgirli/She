@@ -510,8 +510,142 @@ function changeProfilePhoto() {
 }
 
 // ============================================
-// CONTACTS & CHATS
+// REAL-TIME MESSAGING
 // ============================================
+async function loadMessages() {
+    const chatUid = localStorage.getItem("currentChatUid");
+    const chatName = localStorage.getItem("currentChatName");
+    
+    if (!chatUid || !firebaseInitialized || !auth?.currentUser) {
+        console.error("Missing chat info");
+        return;
+    }
+    
+    try {
+        // Update header with chat info
+        const chatHeader = document.querySelector(".chat-profile h3");
+        const chatStatus = document.querySelector(".chat-profile p");
+        if (chatHeader) chatHeader.textContent = chatName || "Chat";
+        if (chatStatus) chatStatus.textContent = "online";
+        
+        // Create conversation ID
+        const conversationId = [auth.currentUser.uid, chatUid].sort().join("_");
+        
+        // Setup real-time message listener
+        await setupMessageListener(conversationId);
+        
+    } catch (error) {
+        console.error("Error loading messages:", error);
+    }
+}
+
+async function setupMessageListener(conversationId) {
+    try {
+        const { collection, query, orderBy, onSnapshot } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        
+        const messagesRef = collection(db, "conversations", conversationId, "messages");
+        const q = query(messagesRef, orderBy("createdAt", "asc"));
+        
+        // Set up real-time listener
+        if (messagesUnsubscribe) messagesUnsubscribe();
+        
+        messagesUnsubscribe = onSnapshot(q, (snapshot) => {
+            const messagesContainer = document.getElementById("messages");
+            messagesContainer.innerHTML = ""; // Clear previous messages
+            
+            snapshot.forEach((doc) => {
+                const message = doc.data();
+                const isOwn = message.senderId === auth.currentUser.uid;
+                
+                const messageEl = document.createElement("div");
+                messageEl.className = `message ${isOwn ? "sent" : "received"}`;
+                messageEl.innerHTML = `<p>${escapeHTML(message.text)}</p>`;
+                
+                messagesContainer.appendChild(messageEl);
+            });
+            
+            // Scroll to bottom
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        });
+        
+    } catch (error) {
+        console.error("Error setting up listener:", error);
+    }
+}
+
+async function sendMessage() {
+    const messageInput = document.getElementById("messageInput");
+    const text = messageInput?.value?.trim() || "";
+    
+    if (!text) return;
+    
+    const chatUid = localStorage.getItem("currentChatUid");
+    
+    if (!chatUid || !firebaseInitialized || !auth?.currentUser) {
+        showError("Not in a chat");
+        return;
+    }
+    
+    try {
+        const { collection, addDoc, serverTimestamp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        
+        const conversationId = [auth.currentUser.uid, chatUid].sort().join("_");
+        
+        // Add message to Firestore
+        await addDoc(collection(db, "conversations", conversationId, "messages"), {
+            senderId: auth.currentUser.uid,
+            receiverId: chatUid,
+            text: text,
+            createdAt: serverTimestamp()
+        });
+        
+        // Clear input
+        messageInput.value = "";
+        messageInput.focus();
+        
+    } catch (error) {
+        console.error("Error sending message:", error);
+        showError("Failed to send message");
+    }
+}
+
+function handleEnter(event) {
+    if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        sendMessage();
+    }
+}
+
+function escapeHTML(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Stub functions for other features
+function startCall() {
+    showError("Call feature coming soon");
+}
+
+function startVideoCall() {
+    showError("Video call feature coming soon");
+}
+
+function showEmoji() {
+    showError("Emoji picker coming soon");
+}
+
+function attachFile() {
+    showError("File sharing coming soon");
+}
+
+function openCamera() {
+    showError("Camera feature coming soon");
+}
+
+function sendVoiceMessage() {
+    showError("Voice message feature coming soon");
+}
 async function loadChats() {
     if (!firebaseInitialized || !auth?.currentUser) return;
     
@@ -729,6 +863,11 @@ document.addEventListener("DOMContentLoaded", async () => {
             await loadUserProfile();
         }
         
+        // Load messages if on chat page
+        if (currentPage === "chat.html") {
+            await loadMessages();
+        }
+        
         // Initialize search on new-chat page (don't load all users)
         if (currentPage === "new-chat.html") {
             const searchInput = document.getElementById("newChatSearch");
@@ -775,3 +914,12 @@ window.toggleLoginPassword = toggleLoginPassword;
 window.toggleSignupPassword = toggleSignupPassword;
 window.toggleConfirmPassword = toggleConfirmPassword;
 window.showDebug = showDebug;
+window.loadMessages = loadMessages;
+window.sendMessage = sendMessage;
+window.handleEnter = handleEnter;
+window.showEmoji = showEmoji;
+window.attachFile = attachFile;
+window.openCamera = openCamera;
+window.sendVoiceMessage = sendVoiceMessage;
+window.startCall = startCall;
+window.startVideoCall = startVideoCall;
