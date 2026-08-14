@@ -15,11 +15,7 @@ window.showDebug = function(msg) {
 // Log immediately when script loads
 window.showDebug("app.js loaded");
 
-// Set an absolute hard stop - after 4 seconds, give up on Firebase and let user continue
-const FIREBASE_TIMEOUT = 4000;
-const startTime = Date.now();
-
-// Immediate status update - show we're alive
+// Keep startup status simple and deterministic; Firebase init will set the final status itself.
 document.addEventListener("DOMContentLoaded", () => {
     window.showDebug("DOM ready");
     const el = document.getElementById("firebaseStatus");
@@ -28,43 +24,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 });
 
-// Force update immediately even if DOM not ready
-if (document.readyState === "loading") {
-    window.showDebug("Document still loading");
-    document.addEventListener("DOMContentLoaded", () => {
-        const el = document.getElementById("firebaseStatus");
-        if (el) el.textContent = "⏳ Loading Firebase...";
-    });
-} else {
-    // DOM already ready
+if (document.readyState !== "loading") {
     window.showDebug("Document already ready");
     const el = document.getElementById("firebaseStatus");
     if (el) el.textContent = "⏳ Loading Firebase...";
 }
-
-// After 2 seconds, show progress
-setTimeout(() => {
-    const el = document.getElementById("firebaseStatus");
-    if (el && el.textContent.includes("Loading")) {
-        window.showDebug("2s checkpoint: showing ready");
-        el.textContent = "✅ Ready - you can sign in";
-    }
-}, 2000);
-
-// After 4 seconds, definitely show as ready
-setTimeout(() => {
-    window.showDebug("4s checkpoint: Firebase timeout");
-    window.firebaseInitCompleted = true;
-    const el = document.getElementById("firebaseStatus");
-    if (el) {
-        el.textContent = "✅ Ready";
-    }
-    // Also update any error boxes
-    const errorEl = document.getElementById("firebaseError");
-    if (errorEl) {
-        errorEl.style.display = "none";
-    }
-}, FIREBASE_TIMEOUT);
 
 const STORAGE_KEY = "she_app_state";
 const CURRENT_USER_KEY = "she_current_user";
@@ -94,7 +58,17 @@ let firebaseInitCompleted = false;  // Track if init finished (success or failur
 const FIREBASE_INIT_TIMEOUT_MS = 10000;
 
 async function initializeFirebaseCore() {
-    if (!configured || auth || db) return;
+    if (!configured) {
+        const message = "Firebase is not configured. Check firebase-config.js.";
+        firebaseError = message;
+        window.showDebug("❌ ERROR: " + message);
+        return;
+    }
+
+    if (auth || db) {
+        firebaseError = null;
+        return;
+    }
 
     try {
         window.showDebug("🔥 Loading Firebase modules...");
@@ -129,7 +103,7 @@ async function initializeFirebaseCore() {
             new Promise((_, reject) => {
                 setTimeout(() => reject(new Error("Firebase auth persistence setup timed out after 10 seconds.")), FIREBASE_INIT_TIMEOUT_MS);
             })
-        ]).catch(e => window.showDebug("⚠️ " + e.message));
+        ]).catch((e) => window.showDebug("⚠️ " + e.message));
         window.showDebug("✅ Persistence set");
 
         window.showDebug("🔥 Getting Firestore...");
@@ -149,11 +123,6 @@ async function initializeFirebaseCore() {
             }
         });
         window.showDebug("✅ Auth listener ready");
-
-        await Promise.race([
-            new Promise((resolve) => setTimeout(resolve, 200)),
-            Promise.resolve()
-        ]);
 
         window.showDebug("🔥 Checking redirect result...");
         try {
@@ -178,9 +147,10 @@ async function initializeFirebaseCore() {
             window.showDebug("⚠️ Redirect error: " + e.message);
         }
 
+        firebaseError = null;
         window.showDebug("✅ Firebase READY!");
     } catch (error) {
-        const errorMsg = error?.message || error?.toString() || "Unknown error";
+        const errorMsg = error?.message || error?.toString() || "Unknown Firebase error";
         firebaseError = errorMsg;
         window.showDebug("❌ ERROR: " + errorMsg);
         configured = false;
@@ -189,9 +159,16 @@ async function initializeFirebaseCore() {
 
 async function initializeFirebase() {
     console.log("🔥 initializeFirebase() STARTING");
+    firebaseInitCompleted = false;
+    firebaseError = null;
     try {
         console.log("🔥 Calling initializeFirebaseCore()...");
-        await initializeFirebaseCore();
+        await Promise.race([
+            initializeFirebaseCore(),
+            new Promise((_, reject) => {
+                setTimeout(() => reject(new Error("Firebase initialization timed out after 10 seconds.")), FIREBASE_INIT_TIMEOUT_MS);
+            })
+        ]);
         console.log("✅ initializeFirebaseCore() completed");
     } catch (error) {
         const errorMsg = error?.message || error?.toString() || "Unknown error";
@@ -199,6 +176,7 @@ async function initializeFirebase() {
         console.error("❌ initializeFirebase CATCH:", error);
     } finally {
         firebaseInitCompleted = true;
+        window.firebaseInitCompleted = true;
         console.log("✅ initializeFirebase FINALLY complete");
         console.log("   auth ready: " + !!auth);
         console.log("   firebaseAuthModule ready: " + !!firebaseAuthModule);
