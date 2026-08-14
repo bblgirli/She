@@ -15,7 +15,7 @@ window.showDebug = function(msg) {
 // Log immediately when script loads
 window.showDebug("app.js loaded");
 
-// Keep startup status simple and deterministic; Firebase init will set the final status itself.
+// Single startup status; real Firebase init will decide the final state.
 document.addEventListener("DOMContentLoaded", () => {
     window.showDebug("DOM ready");
     const el = document.getElementById("firebaseStatus");
@@ -184,6 +184,7 @@ async function initializeFirebase() {
         console.log("   error: " + firebaseError);
         updateFirebaseStatus();
     }
+    return { auth: !!auth, db: !!db, firebaseAuthModule: !!firebaseAuthModule, firebaseError };
 }
 
 function readState() {
@@ -1517,22 +1518,10 @@ async function initializeApp() {
     console.log("=== APP INITIALIZATION STARTED ===");
     updateFirebaseStatus();
 
-    console.log("Starting Firebase initialization (non-blocking)");
-    // DO NOT AWAIT Firebase - let it initialize in the background
-    initializeFirebase().catch(err => {
-        console.error("Firebase init error:", err);
-        updateFirebaseStatus();
-    });
-
-    // Update status every 500ms
-    const statusInterval = setInterval(updateFirebaseStatus, 500);
-    
-    // Wait a bit for Firebase to start, but DON'T WAIT FOR IT TO COMPLETE
-    await new Promise(resolve => setTimeout(resolve, 500));
-    clearInterval(statusInterval);
+    console.log("Starting Firebase initialization");
+    const initResult = await initializeFirebase();
+    console.log("Firebase initialization finished", initResult);
     updateFirebaseStatus();
-    
-    console.log("Continuing app init - Firebase initializing in background");
 
     if (!requireAuth()) return;
 
