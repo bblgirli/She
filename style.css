@@ -336,6 +336,20 @@ button {
     font-size: 30px;
 
     margin-right: 14px;
+    overflow: hidden;
+}
+
+.contact-avatar,
+.chat-avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #ddd;
+    flex-shrink: 0;
 }
 
 .group-avatar {
@@ -545,7 +559,12 @@ button {
 }
 
 .small-avatar img,
-.avatar img {
+.avatar img,
+.contact-avatar img,
+.settings-avatar img,
+.large-profile-photo img,
+.edit-profile-photo img,
+.status-avatar img {
     width: 100%;
     height: 100%;
     object-fit: cover;
@@ -835,6 +854,21 @@ button {
     min-height: 76px;
 }
 
+.contact-avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    overflow: hidden;
+    margin-right: 12px;
+}
+
+.contact-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
 
 /* =========================
    STATUS
@@ -1013,6 +1047,7 @@ button {
     justify-content: center;
 
     font-size: 70px;
+    overflow: hidden;
 }
 
 .change-photo {
@@ -1091,6 +1126,7 @@ button {
     font-size: 32px;
 
     margin-right: 15px;
+    overflow: hidden;
 }
 
 .settings-profile h3 {
@@ -1541,6 +1577,7 @@ button {
     justify-content: center;
 
     font-size: 60px;
+    overflow: hidden;
 }
 
 .edit-photo-button {
