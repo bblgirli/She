@@ -557,12 +557,18 @@ async function setupMessageListener(conversationId) {
                 const message = messageDoc.data();
                 const isOwn = message.senderId === auth.currentUser.uid;
                 const messageStatus = message.status || "sent";
+                const messageTime = formatMessageTime(message.createdAt);
 
                 const messageEl = document.createElement("div");
                 messageEl.className = `message ${isOwn ? "sent" : "received"}`;
                 messageEl.innerHTML = `
-                    <p>${escapeHTML(message.text)}</p>
-                    ${isOwn ? `<span class="status-ticks ${messageStatus}">${getStatusTicks(messageStatus)}</span>` : ""}
+                    <div class="message-body">
+                        <p>${escapeHTML(message.text)}</p>
+                    </div>
+                    <div class="message-meta">
+                        <span class="message-time-inline">${messageTime}</span>
+                        ${isOwn ? `<span class="status-ticks ${messageStatus}">${getStatusTicks(messageStatus)}</span>` : ""}
+                    </div>
                 `;
 
                 messagesContainer.appendChild(messageEl);
