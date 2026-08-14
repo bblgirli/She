@@ -36,6 +36,16 @@ let analyser = null;
 let dataArray = null;
 let animationId = null;
 
+// WebRTC calling
+let peerConnection = null;
+let currentCallState = null; // 'calling', 'ringing', 'connected', null
+let callStream = null;
+let incomingCallData = null;
+let currentCallUid = null;
+let callStartTime = null;
+let callDurationInterval = null;
+let callHistoryListener = null;
+
 // ============================================
 // FIREBASE INITIALIZATION
 // ============================================
@@ -1337,7 +1347,357 @@ async function markConversationRead(conversationId) {
 
 // Stub functions for other features
 function startCall() {
-    showError("Call feature coming soon");
+    if (!localStorage.getItem("currentChatUid")) {
+        showError("No chat selected");
+        return;
+    }
+    initiateCall();
+}
+
+async function initiateCall() {
+    if (peerConnection) {
+        showError("Call already in progress");
+        return;
+    }
+    
+    if (!auth?.currentUser || !db) return;
+    
+    try {
+        currentCallUid = localStorage.getItem("currentChatUid");
+        const configuration = {
+            iceServers: [
+                { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }
+            ]
+        };
+        
+        peerConnection = new RTCPeerConnection(configuration);
+        callStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        
+        callStream.getTracks().forEach(track => {
+            peerConnection.addTrack(track, callStream);
+        });
+        
+        peerConnection.onicecandidate = async (event) => {
+            if (event.candidate) {
+                const { doc, collection, addDoc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+                const conversationId = getConversationId(auth.currentUser.uid, currentCallUid);
+                
+                await addDoc(collection(db, "conversations", conversationId, "calls", localStorage.getItem("callSessionId"), "iceCandidates"), {
+                    candidate: event.candidate.candidate,
+                    sdpMLineIndex: event.candidate.sdpMLineIndex,
+                    sdpMid: event.candidate.sdpMid,
+                    createdAt: new Date()
+                });
+            }
+        };
+        
+        peerConnection.ontrack = (event) => {
+            console.log("Received remote track:", event.track);
+            const remoteAudio = document.getElementById("remoteAudio");
+            if (remoteAudio && event.streams[0]) {
+                remoteAudio.srcObject = event.streams[0];
+            }
+        };
+        
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        
+        const callSessionId = Date.now().toString();
+        localStorage.setItem("callSessionId", callSessionId);
+        currentCallState = "calling";
+        showOutgoingCallScreen();
+        
+        const { doc, collection, addDoc, serverTimestamp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const conversationId = getConversationId(auth.currentUser.uid, currentCallUid);
+        
+        await addDoc(collection(db, "conversations", conversationId, "calls"), {
+            callSessionId: callSessionId,
+            callerId: auth.currentUser.uid,
+            receiverId: currentCallUid,
+            offer: offer.sdp,
+            status: "calling",
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+        });
+        
+        // Listen for answer
+        const { query, where, onSnapshot, Query } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const callsRef = collection(db, "conversations", conversationId, "calls");
+        const q = query(callsRef, where("callSessionId", "==", callSessionId));
+        
+        onSnapshot(q, (snapshot) => {
+            snapshot.docChanges().forEach(async (change) => {
+                if (change.type === "modified") {
+                    const callDoc = change.doc.data();
+                    if (callDoc.answer && !peerConnection.remoteDescription) {
+                        currentCallState = "connected";
+                        hideOutgoingCallScreen();
+                        showOngoingCallScreen();
+                        
+                        const remoteDescription = new RTCSessionDescription({
+                            type: "answer",
+                            sdp: callDoc.answer
+                        });
+                        await peerConnection.setRemoteDescription(remoteDescription);
+                    }
+                }
+            });
+        });
+        
+    } catch (error) {
+        console.error("Error initiating call:", error);
+        showError("Failed to start call");
+        endCall();
+    }
+}
+
+async function handleIncomingCall() {
+    if (!db) return;
+    
+    const { query, where, onSnapshot, Query } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+    const { collection } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+    
+    // Listen for incoming calls in all conversations
+    const conversationsRef = collection(db, "users", auth.currentUser.uid, "activeConversations");
+    onSnapshot(conversationsRef, async (snapshot) => {
+        for (const convDoc of snapshot.docs) {
+            const conversationId = convDoc.id;
+            const callsRef = collection(db, "conversations", conversationId, "calls");
+            const q = query(callsRef, where("receiverId", "==", auth.currentUser.uid), where("status", "==", "calling"));
+            
+            onSnapshot(q, (callSnapshot) => {
+                callSnapshot.docChanges().forEach((change) => {
+                    if (change.type === "added" && !incomingCallData) {
+                        incomingCallData = { ...change.doc.data(), docId: change.doc.id, conversationId };
+                        showIncomingCallScreen();
+                    }
+                });
+            });
+        }
+    });
+}
+
+async function answerCall() {
+    if (!incomingCallData || !auth?.currentUser || !db) return;
+    
+    try {
+        const configuration = {
+            iceServers: [
+                { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }
+            ]
+        };
+        
+        peerConnection = new RTCPeerConnection(configuration);
+        callStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        
+        callStream.getTracks().forEach(track => {
+            peerConnection.addTrack(track, callStream);
+        });
+        
+        peerConnection.onicecandidate = async (event) => {
+            if (event.candidate) {
+                const { doc, collection, addDoc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+                
+                await addDoc(collection(db, "conversations", incomingCallData.conversationId, "calls", incomingCallData.callSessionId, "iceCandidates"), {
+                    candidate: event.candidate.candidate,
+                    sdpMLineIndex: event.candidate.sdpMLineIndex,
+                    sdpMid: event.candidate.sdpMid,
+                    createdAt: new Date()
+                });
+            }
+        };
+        
+        peerConnection.ontrack = (event) => {
+            console.log("Received remote track:", event.track);
+            const remoteAudio = document.getElementById("remoteAudio");
+            if (remoteAudio && event.streams[0]) {
+                remoteAudio.srcObject = event.streams[0];
+            }
+        };
+        
+        const remoteDescription = new RTCSessionDescription({
+            type: "offer",
+            sdp: incomingCallData.offer
+        });
+        await peerConnection.setRemoteDescription(remoteDescription);
+        
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        
+        const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const callDocRef = doc(db, "conversations", incomingCallData.conversationId, "calls", incomingCallData.docId);
+        
+        await updateDoc(callDocRef, {
+            answer: answer.sdp,
+            status: "connected",
+            updatedAt: new Date()
+        });
+        
+        currentCallState = "connected";
+        currentCallUid = incomingCallData.callerId;
+        currentCallState = "connected";
+        hideIncomingCallScreen();
+        showOngoingCallScreen();
+        callStartTime = Date.now();
+        startCallDurationTimer();
+        
+    } catch (error) {
+        console.error("Error answering call:", error);
+        showError("Failed to answer call");
+        declineCall();
+    }
+}
+
+async function declineCall() {
+    if (!incomingCallData || !db) return;
+    
+    try {
+        const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const callDocRef = doc(db, "conversations", incomingCallData.conversationId, "calls", incomingCallData.docId);
+        
+        await updateDoc(callDocRef, {
+            status: "declined",
+            updatedAt: new Date()
+        });
+        
+        hideIncomingCallScreen();
+        incomingCallData = null;
+        
+    } catch (error) {
+        console.error("Error declining call:", error);
+    }
+}
+
+async function endCall() {
+    if (!auth?.currentUser || !db) return;
+    
+    try {
+        // Stop media tracks
+        if (callStream) {
+            callStream.getTracks().forEach(track => track.stop());
+            callStream = null;
+        }
+        
+        // Close peer connection
+        if (peerConnection) {
+            peerConnection.close();
+            peerConnection = null;
+        }
+        
+        // Update call status in Firestore
+        if (currentCallUid) {
+            const conversationId = getConversationId(auth.currentUser.uid, currentCallUid);
+            const callSessionId = localStorage.getItem("callSessionId");
+            
+            if (callSessionId) {
+                const { query, where, getDocs, doc, updateDoc, collection } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+                const callsRef = collection(db, "conversations", conversationId, "calls");
+                const q = query(callsRef, where("callSessionId", "==", callSessionId));
+                const querySnapshot = await getDocs(q);
+                
+                querySnapshot.forEach(async (callDoc) => {
+                    await updateDoc(callDoc.ref, {
+                        status: "ended",
+                        duration: Math.floor((Date.now() - callStartTime) / 1000),
+                        updatedAt: new Date()
+                    });
+                });
+            }
+        }
+        
+        // Save to call history
+        if (callStartTime) {
+            const duration = Math.floor((Date.now() - callStartTime) / 1000);
+            const { addDoc, collection, serverTimestamp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+            
+            await addDoc(collection(db, "users", auth.currentUser.uid, "callHistory"), {
+                contactUid: currentCallUid,
+                duration: duration,
+                timestamp: serverTimestamp(),
+                type: incomingCallData ? "incoming" : "outgoing"
+            });
+        }
+        
+        // Clear call state
+        currentCallState = null;
+        currentCallUid = null;
+        callStartTime = null;
+        if (callDurationInterval) {
+            clearInterval(callDurationInterval);
+            callDurationInterval = null;
+        }
+        
+        hideOngoingCallScreen();
+        hideOutgoingCallScreen();
+        incomingCallData = null;
+        localStorage.removeItem("callSessionId");
+        
+    } catch (error) {
+        console.error("Error ending call:", error);
+    }
+}
+
+function showIncomingCallScreen() {
+    const screen = document.getElementById("incomingCallScreen");
+    if (screen) {
+        screen.style.display = "flex";
+        const callerName = localStorage.getItem(`user_${incomingCallData.callerId}_name`) || "Unknown";
+        const callerElement = document.getElementById("incomingCallerName");
+        if (callerElement) callerElement.textContent = callerName;
+    }
+}
+
+function hideIncomingCallScreen() {
+    const screen = document.getElementById("incomingCallScreen");
+    if (screen) screen.style.display = "none";
+}
+
+function showOutgoingCallScreen() {
+    const screen = document.getElementById("outgoingCallScreen");
+    if (screen) {
+        screen.style.display = "flex";
+        const receiverName = localStorage.getItem("currentChatName") || "Unknown";
+        const receiverElement = document.getElementById("outgoingCalleeName");
+        if (receiverElement) receiverElement.textContent = receiverName;
+    }
+}
+
+function hideOutgoingCallScreen() {
+    const screen = document.getElementById("outgoingCallScreen");
+    if (screen) screen.style.display = "none";
+}
+
+function showOngoingCallScreen() {
+    const screen = document.getElementById("ongoingCallScreen");
+    if (screen) {
+        screen.style.display = "flex";
+        callStartTime = Date.now();
+        startCallDurationTimer();
+    }
+}
+
+function hideOngoingCallScreen() {
+    const screen = document.getElementById("ongoingCallScreen");
+    if (screen) screen.style.display = "none";
+    if (callDurationInterval) {
+        clearInterval(callDurationInterval);
+        callDurationInterval = null;
+    }
+}
+
+function startCallDurationTimer() {
+    if (callDurationInterval) clearInterval(callDurationInterval);
+    
+    callDurationInterval = setInterval(() => {
+        if (callStartTime) {
+            const duration = Math.floor((Date.now() - callStartTime) / 1000);
+            const minutes = Math.floor(duration / 60);
+            const seconds = duration % 60;
+            const durationStr = `${minutes}:${seconds.toString().padStart(2, "0")}`;
+            const durationElement = document.getElementById("callDuration");
+            if (durationElement) durationElement.textContent = durationStr;
+        }
+    }, 1000);
 }
 
 function startVideoCall() {
@@ -1601,6 +1961,70 @@ function goBack() {
     window.history.back();
 }
 
+async function loadCallHistory() {
+    if (!auth?.currentUser || !db) return;
+    
+    try {
+        const { collection, query, orderBy, getDocs, where } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        
+        const callHistoryRef = collection(db, "users", auth.currentUser.uid, "callHistory");
+        const q = query(callHistoryRef, orderBy("timestamp", "desc"));
+        
+        const snapshot = await getDocs(q);
+        const callsList = document.getElementById("callsList");
+        const emptyMessage = document.getElementById("emptyCallsMessage");
+        
+        if (snapshot.empty) {
+            if (callsList) callsList.innerHTML = "";
+            if (emptyMessage) emptyMessage.style.display = "block";
+            return;
+        }
+        
+        if (emptyMessage) emptyMessage.style.display = "none";
+        
+        let html = "";
+        
+        for (const callDoc of snapshot.docs) {
+            const callData = callDoc.data();
+            const contactUid = callData.contactUid;
+            
+            // Get contact info
+            const { query: userQuery, where: whereClause, getDocs: getUserDocs, collection: usersCollection } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+            const userSnap = await getUserDocs(userQuery(usersCollection(db, "users"), whereClause("uid", "==", contactUid)));
+            const contactData = userSnap.docs[0]?.data() || { displayName: "Unknown", photoData: null };
+            
+            const duration = callData.duration || 0;
+            const minutes = Math.floor(duration / 60);
+            const seconds = duration % 60;
+            const durationStr = duration > 0 ? `${minutes}:${seconds.toString().padStart(2, "0")}` : "0:00";
+            
+            const timestamp = callData.timestamp?.toDate?.() || new Date();
+            const timeStr = formatMessageTime(timestamp);
+            const callType = callData.type === "incoming" ? "↙ Incoming" : "↗ Outgoing";
+            
+            const avatar = contactData.photoData ? `<img src="${contactData.photoData}" alt="${contactData.displayName}" class="avatar-img">` : '<div class="avatar">👤</div>';
+            
+            html += `
+                <div class="call-history-item" onclick="startChatWithUser('${contactUid}')">
+                    ${avatar}
+                    <div class="call-details">
+                        <h3>${contactData.displayName}</h3>
+                        <p>${callType} • ${timeStr} • ${durationStr}</p>
+                    </div>
+                    <button class="call-button" onclick="event.stopPropagation(); initiateCall(); localStorage.setItem('currentChatUid', '${contactUid}');">
+                        📞
+                    </button>
+                </div>
+            `;
+        }
+        
+        if (callsList) callsList.innerHTML = html;
+        
+    } catch (error) {
+        console.error("Error loading call history:", error);
+    }
+}
+
 function openMenu() {
     const choice = prompt("Menu:\n1. Profile\n2. Settings\n3. Logout\n\nEnter 1, 2, or 3:");
     
@@ -1688,11 +2112,17 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (currentPage === "contacts.html") {
             await loadContactsPage();
         }
+
+        // Load calls page
+        if (currentPage === "calls.html") {
+            await loadCallHistory();
+        }
         
         // Load messages if on chat page
         if (currentPage === "chat.html") {
             await setCurrentUserPresence(true);
             await loadMessages();
+            handleIncomingCall();
         }
         
         if (currentPage === "chats.html") {
@@ -1759,3 +2189,16 @@ window.playAudio = playAudio;
 window.updateAudioDuration = updateAudioDuration;
 window.startCall = startCall;
 window.startVideoCall = startVideoCall;
+window.initiateCall = initiateCall;
+window.handleIncomingCall = handleIncomingCall;
+window.answerCall = answerCall;
+window.declineCall = declineCall;
+window.endCall = endCall;
+window.showIncomingCallScreen = showIncomingCallScreen;
+window.hideIncomingCallScreen = hideIncomingCallScreen;
+window.showOutgoingCallScreen = showOutgoingCallScreen;
+window.hideOutgoingCallScreen = hideOutgoingCallScreen;
+window.showOngoingCallScreen = showOngoingCallScreen;
+window.hideOngoingCallScreen = hideOngoingCallScreen;
+window.startCallDurationTimer = startCallDurationTimer;
+window.loadCallHistory = loadCallHistory;

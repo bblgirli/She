@@ -10,6 +10,13 @@
         content="width=device-width, initial-scale=1.0"
     >
 
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#078b59">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="She">
+
     <title>Chat</title>
 
     <link rel="stylesheet" href="style.css">
@@ -155,8 +162,53 @@
         </button>
 
     </footer>
+    <!-- Remote Audio -->
+    <audio id="remoteAudio" autoplay playinline></audio>
 
+    <!-- Incoming Call Screen -->
+    <div id="incomingCallScreen" class="call-screen incoming-call-screen" style="display: none;">
+        <div class="call-screen-content">
+            <div class="call-screen-avatar">📱</div>
+            <h2>Incoming Call</h2>
+            <p id="incomingCallerName">Unknown Caller</p>
+            <div class="call-buttons">
+                <button class="call-accept-btn" onclick="answerCall()">
+                    ✓ Accept
+                </button>
+                <button class="call-decline-btn" onclick="declineCall()">
+                    ✕ Decline
+                </button>
+            </div>
+        </div>
+    </div>
 
+    <!-- Outgoing Call Screen -->
+    <div id="outgoingCallScreen" class="call-screen outgoing-call-screen" style="display: none;">
+        <div class="call-screen-content">
+            <div class="call-screen-avatar">📱</div>
+            <h2>Calling...</h2>
+            <p id="outgoingCalleeName">Unknown</p>
+            <div class="call-buttons">
+                <button class="call-end-btn" onclick="endCall()">
+                    ✕ Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ongoing Call Screen -->
+    <div id="ongoingCallScreen" class="call-screen ongoing-call-screen" style="display: none;">
+        <div class="call-screen-content">
+            <div class="call-screen-avatar">📱</div>
+            <h2>Call Connected</h2>
+            <p id="callDuration">0:00</p>
+            <div class="call-buttons">
+                <button class="call-end-btn" onclick="endCall()">
+                    ✕ End Call
+                </button>
+            </div>
+        </div>
+    </div>
 </div>
 
 
