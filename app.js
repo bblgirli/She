@@ -91,6 +91,7 @@ let authStateResolved = false;
 let authStatePromiseResolve = null;
 let firebaseError = null;
 let firebaseInitCompleted = false;  // Track if init finished (success or failure)
+const FIREBASE_INIT_TIMEOUT_MS = 10000;
 
 async function initializeFirebaseCore() {
     if (!configured || auth || db) return;
@@ -98,11 +99,20 @@ async function initializeFirebaseCore() {
     try {
         window.showDebug("🔥 Loading Firebase modules...");
 
-        const [appModule, authModule, firestoreModule] = await Promise.all([
+        const loaders = [
             import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"),
             import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"),
             import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js")
+        ];
+
+        const modules = await Promise.race([
+            Promise.all(loaders),
+            new Promise((_, reject) => {
+                setTimeout(() => reject(new Error("Firebase module import timed out after 10 seconds.")), FIREBASE_INIT_TIMEOUT_MS);
+            })
         ]);
+
+        const [appModule, authModule, firestoreModule] = modules;
 
         window.showDebug("✅ Modules loaded");
         firebaseAuthModule = authModule;
@@ -114,7 +124,12 @@ async function initializeFirebaseCore() {
         window.showDebug("✅ Auth initialized");
 
         window.showDebug("🔥 Setting persistence...");
-        await firebaseAuthModule.setPersistence(auth, firebaseAuthModule.browserLocalPersistence).catch(e => window.showDebug("⚠️ " + e.message));
+        await Promise.race([
+            firebaseAuthModule.setPersistence(auth, firebaseAuthModule.browserLocalPersistence),
+            new Promise((_, reject) => {
+                setTimeout(() => reject(new Error("Firebase auth persistence setup timed out after 10 seconds.")), FIREBASE_INIT_TIMEOUT_MS);
+            })
+        ]).catch(e => window.showDebug("⚠️ " + e.message));
         window.showDebug("✅ Persistence set");
 
         window.showDebug("🔥 Getting Firestore...");
@@ -134,6 +149,11 @@ async function initializeFirebaseCore() {
             }
         });
         window.showDebug("✅ Auth listener ready");
+
+        await Promise.race([
+            new Promise((resolve) => setTimeout(resolve, 200)),
+            Promise.resolve()
+        ]);
 
         window.showDebug("🔥 Checking redirect result...");
         try {
