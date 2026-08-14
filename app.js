@@ -194,9 +194,13 @@ async function initializeFirebase() {
         ]);
         console.log("✅ initializeFirebaseCore() completed");
     } catch (error) {
-        const errorMsg = error?.message || error?.toString() || "Unknown error";
+        const errorMsg = error?.stack || error?.message || error?.toString() || "Unknown error";
         firebaseError = errorMsg;
-        console.error("❌ initializeFirebase CATCH:", error);
+        console.error("❌ initializeFirebase CATCH: full error:", error);
+        const statusElement = document.getElementById("firebaseStatus");
+        if (statusElement) {
+            statusElement.textContent = errorMsg;
+        }
         setFirebaseFailure(errorMsg);
     } finally {
         firebaseInitCompleted = true;
@@ -1571,10 +1575,21 @@ async function initializeApp() {
     console.log("=== APP INITIALIZATION STARTED ===");
     updateFirebaseStatus();
 
-    console.log("Starting Firebase initialization");
-    const initResult = await initializeFirebase();
-    console.log("Firebase initialization finished", initResult);
-    updateFirebaseStatus();
+    try {
+        console.log("Starting Firebase initialization");
+        const initResult = await initializeFirebase();
+        console.log("Firebase initialization finished", initResult);
+        updateFirebaseStatus();
+    } catch (error) {
+        const errorMsg = error?.stack || error?.message || error?.toString() || "Unknown Firebase startup error";
+        firebaseError = errorMsg;
+        console.error("❌ Firebase startup error in initializeApp():", error);
+        const statusElement = document.getElementById("firebaseStatus");
+        if (statusElement) {
+            statusElement.textContent = errorMsg;
+        }
+        updateFirebaseStatus();
+    }
 
     if (!requireAuth()) return;
 
