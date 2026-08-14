@@ -17,6 +17,9 @@ let chats = [];
 let currentChatUid = null;
 let chatListUnsubscribe = null;
 let messagesUnsubscribe = null;
+let presenceUnsubscribe = null;
+let typingUnsubscribe = null;
+let typingTimer = null;
 
 // ============================================
 // FIREBASE INITIALIZATION
@@ -164,6 +167,8 @@ async function handleLogin(event) {
         
         const result = await signInWithEmailAndPassword(auth, email, password);
         
+        await setCurrentUserPresence(true);
+        
         saveUser({
             uid: result.user.uid,
             email: result.user.email,
@@ -234,8 +239,12 @@ async function handleSignup(event) {
             email: result.user.email,
             displayName: displayName,
             phone: fullPhone,
-            createdAt: new Date()
+            createdAt: new Date(),
+            online: true,
+            lastSeen: null
         });
+
+        await setCurrentUserPresence(true);
         
         saveUser({
             uid: result.user.uid,
@@ -279,8 +288,12 @@ async function handleGoogleLogin() {
             email: result.user.email,
             displayName: result.user.displayName || "",
             phone: "", // Google doesn't provide phone
-            createdAt: new Date()
+            createdAt: new Date(),
+            online: true,
+            lastSeen: null
         }, { merge: true });
+
+        await setCurrentUserPresence(true);
         
         saveUser({
             uid: result.user.uid,
@@ -376,11 +389,65 @@ async function handleResetPassword(event) {
     }
 }
 
+async function setCurrentUserPresence(isOnline) {
+    if (!firebaseInitialized || !auth?.currentUser) return;
+
+    try {
+        const { doc, setDoc, serverTimestamp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        await setDoc(doc(db, "users", auth.currentUser.uid), {
+            uid: auth.currentUser.uid,
+            online: isOnline,
+            lastSeen: isOnline ? null : serverTimestamp(),
+            updatedAt: serverTimestamp()
+        }, { merge: true });
+    } catch (error) {
+        console.warn("Could not update presence:", error);
+    }
+}
+
+async function setTypingStatus(isTyping, chatWithUserId) {
+    if (!firebaseInitialized || !auth?.currentUser) return;
+
+    try {
+        const { doc, setDoc, serverTimestamp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        await setDoc(doc(db, "users", auth.currentUser.uid), {
+            typing: isTyping ? {
+                isTyping: true,
+                chatWith: chatWithUserId,
+                updatedAt: serverTimestamp()
+            } : {
+                isTyping: false,
+                chatWith: null,
+                updatedAt: serverTimestamp()
+            }
+        }, { merge: true });
+    } catch (error) {
+        console.warn("Could not update typing status:", error);
+    }
+}
+
+function stopTypingStatus() {
+    if (typingTimer) {
+        clearTimeout(typingTimer);
+        typingTimer = null;
+    }
+    const chatUid = localStorage.getItem("currentChatUid");
+    if (chatUid) {
+        setTypingStatus(false, chatUid);
+    }
+}
+
 function logout() {
-    if (auth) auth.signOut();
+    if (auth) {
+        setCurrentUserPresence(false);
+        setTypingStatus(false, localStorage.getItem("currentChatUid"));
+        auth.signOut();
+    }
     clearUser();
     if (chatListUnsubscribe) chatListUnsubscribe();
     if (messagesUnsubscribe) messagesUnsubscribe();
+    if (presenceUnsubscribe) presenceUnsubscribe();
+    if (typingUnsubscribe) typingUnsubscribe();
     window.location.href = "login.html";
 }
 
@@ -531,9 +598,58 @@ async function loadMessages() {
         await markMessagesAsRead(conversationId);
         await markConversationRead(conversationId);
         await setupMessageListener(conversationId);
+        await listenToUserPresence(chatUid);
+        await listenToUserTyping(chatUid);
         
     } catch (error) {
         console.error("Error loading messages:", error);
+    }
+}
+
+async function listenToUserPresence(chatUid) {
+    if (!chatUid || !firebaseInitialized) return;
+
+    try {
+        const { doc, onSnapshot } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        if (presenceUnsubscribe) presenceUnsubscribe();
+
+        presenceUnsubscribe = onSnapshot(doc(db, "users", chatUid), (snapshot) => {
+            const userData = snapshot.data() || {};
+            const statusEl = document.querySelector(".chat-profile p");
+            if (!statusEl) return;
+
+            if (userData.online === true) {
+                statusEl.textContent = "Online";
+            } else if (userData.lastSeen) {
+                statusEl.textContent = `Last seen ${formatMessageTime(userData.lastSeen)}`;
+            } else {
+                statusEl.textContent = "Offline";
+            }
+        });
+    } catch (error) {
+        console.warn("Could not listen to user presence:", error);
+    }
+}
+
+async function listenToUserTyping(chatUid) {
+    if (!chatUid || !firebaseInitialized) return;
+
+    try {
+        const { doc, onSnapshot } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        if (typingUnsubscribe) typingUnsubscribe();
+
+        typingUnsubscribe = onSnapshot(doc(db, "users", chatUid), (snapshot) => {
+            const userData = snapshot.data() || {};
+            const typingEl = document.getElementById("typingIndicator");
+            if (!typingEl) return;
+
+            const typing = userData.typing || {};
+            const isTyping = typing.isTyping === true && typing.chatWith === auth.currentUser.uid;
+            typingEl.style.display = isTyping ? "block" : "none";
+            typingEl.textContent = isTyping ? "typing..." : "";
+        });
+    } catch (error) {
+        console.warn("Could not listen to typing state:", error);
     }
 }
 
@@ -701,6 +817,23 @@ function handleEnter(event) {
     if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
         sendMessage();
+    }
+}
+
+function handleMessageInput() {
+    const chatUid = localStorage.getItem("currentChatUid");
+    const value = document.getElementById("messageInput")?.value?.trim() || "";
+
+    if (!chatUid || !firebaseInitialized || !auth?.currentUser) return;
+
+    if (value.length > 0) {
+        if (typingTimer) clearTimeout(typingTimer);
+        setTypingStatus(true, chatUid);
+        typingTimer = setTimeout(() => {
+            setTypingStatus(false, chatUid);
+        }, 1200);
+    } else {
+        stopTypingStatus();
     }
 }
 
@@ -977,6 +1110,23 @@ document.addEventListener("DOMContentLoaded", async () => {
     console.log("📄 Page loaded");
     
     await initializeFirebase();
+
+    document.addEventListener("visibilitychange", async () => {
+        if (!auth?.currentUser) return;
+        if (document.visibilityState === "hidden") {
+            await setCurrentUserPresence(false);
+            stopTypingStatus();
+        } else {
+            await setCurrentUserPresence(true);
+        }
+    });
+
+    window.addEventListener("beforeunload", () => {
+        if (auth?.currentUser) {
+            setCurrentUserPresence(false);
+            stopTypingStatus();
+        }
+    });
     
     // Attach auth form listeners
     document.getElementById("loginForm")?.addEventListener("submit", handleLogin);
@@ -984,6 +1134,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("forgotPasswordForm")?.addEventListener("submit", handleForgotPassword);
     document.getElementById("resetPasswordForm")?.addEventListener("submit", handleResetPassword);
     document.querySelector(".google-button")?.addEventListener("click", handleGoogleLogin);
+
+    const messageInput = document.getElementById("messageInput");
+    if (messageInput) {
+        messageInput.addEventListener("input", handleMessageInput);
+        messageInput.addEventListener("blur", () => {
+            stopTypingStatus();
+        });
+    }
     
     // Check if logged in
     if (firebaseInitialized && auth?.currentUser) {
@@ -1006,7 +1164,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         
         // Load messages if on chat page
         if (currentPage === "chat.html") {
+            await setCurrentUserPresence(true);
             await loadMessages();
+        }
+        
+        if (currentPage === "chats.html") {
+            await setCurrentUserPresence(true);
         }
         
         // Initialize search on new-chat page (don't load all users)
@@ -1058,6 +1221,7 @@ window.showDebug = showDebug;
 window.loadMessages = loadMessages;
 window.sendMessage = sendMessage;
 window.handleEnter = handleEnter;
+window.handleMessageInput = handleMessageInput;
 window.showEmoji = showEmoji;
 window.attachFile = attachFile;
 window.openCamera = openCamera;
