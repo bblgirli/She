@@ -186,10 +186,12 @@ async function handleSignup(event) {
     event.preventDefault();
     clearStatus();
     
-    const email = document.getElementById("signupEmail")?.value?.trim() || "";
-    const password = document.getElementById("signupPassword")?.value || "";
-    const confirm = document.getElementById("signupConfirm")?.value || "";
-    const displayName = document.getElementById("signupName")?.value?.trim() || "";
+    const email = document.getElementById("signupEmail")?.value?.trim() || document.getElementById("email")?.value?.trim() || "";
+    const password = document.getElementById("signupPassword")?.value || document.getElementById("password")?.value || "";
+    const confirm = document.getElementById("signupConfirm")?.value || document.getElementById("confirmPassword")?.value || "";
+    const displayName = document.getElementById("signupName")?.value?.trim() || document.getElementById("name")?.value?.trim() || "";
+    const countryCode = document.getElementById("countryCode")?.value || "+234";
+    const phone = document.getElementById("phone")?.value?.trim() || "";
     
     if (!email || !password || !confirm || !displayName) {
         showError("Please fill in all fields");
@@ -222,12 +224,16 @@ async function handleSignup(event) {
         const result = await createUserWithEmailAndPassword(auth, email, password);
         await updateProfile(result.user, { displayName });
         
-        // Save user to Firestore
+        // Full phone with country code
+        const fullPhone = phone ? countryCode + phone : "";
+        
+        // Save user to Firestore with phone
         const { setDoc, doc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
         await setDoc(doc(db, "users", result.user.uid), {
             uid: result.user.uid,
             email: result.user.email,
             displayName: displayName,
+            phone: fullPhone,
             createdAt: new Date()
         });
         
@@ -272,6 +278,7 @@ async function handleGoogleLogin() {
             uid: result.user.uid,
             email: result.user.email,
             displayName: result.user.displayName || "",
+            phone: "", // Google doesn't provide phone
             createdAt: new Date()
         }, { merge: true });
         
@@ -432,56 +439,44 @@ async function renderChatList() {
     container.innerHTML = html;
 }
 
-async function searchContacts() {
-    const searchTerm = document.getElementById("newChatSearch")?.value?.trim() || "";
+async function searchContactsInput(event) {
+    const searchTerm = event.target.value?.trim() || "";
+    const resultsContainer = document.getElementById("newChatResults");
+    
     if (!searchTerm) {
-        renderAllUsers();
+        resultsContainer.innerHTML = '<div class="message received"><p>Search by username or phone number</p></div>';
         return;
     }
     
+    if (!firebaseInitialized || !auth?.currentUser) return;
+    
     try {
-        const { collection, query, where, getDocs } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        resultsContainer.innerHTML = '<div class="message received"><p>Searching...</p></div>';
         
-        // Search by UID or display name
-        const q = query(
-            collection(db, "users"),
-            where("uid", "!=", auth.currentUser.uid)
+        const { collection, getDocs } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        
+        // Get all users
+        const snapshot = await getDocs(collection(db, "users"));
+        const allUsers = snapshot.docs.map(doc => doc.data());
+        
+        // Filter by phone or username (displayName)
+        const results = allUsers.filter(user => 
+            user.uid !== auth.currentUser.uid && (
+                (user.phone && user.phone.includes(searchTerm)) ||
+                (user.displayName && user.displayName.toLowerCase().includes(searchTerm.toLowerCase()))
+            )
         );
         
-        const snapshot = await getDocs(q);
-        const results = snapshot.docs
-            .map(doc => doc.data())
-            .filter(user => 
-                user.uid.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                (user.displayName && user.displayName.toLowerCase().includes(searchTerm.toLowerCase()))
-            );
+        renderSearchResults(results);
         
-        renderContactsList(results);
     } catch (error) {
         console.error("Search error:", error);
+        resultsContainer.innerHTML = '<div class="message received"><p>Search failed</p></div>';
     }
 }
 
-async function renderAllUsers() {
-    try {
-        const { collection, query, where, getDocs } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
-        
-        const q = query(
-            collection(db, "users"),
-            where("uid", "!=", auth.currentUser.uid)
-        );
-        
-        const snapshot = await getDocs(q);
-        const users = snapshot.docs.map(doc => doc.data());
-        
-        renderContactsList(users);
-    } catch (error) {
-        console.error("Error loading users:", error);
-    }
-}
-
-function renderContactsList(users) {
-    const container = document.querySelector(".new-chat-list");
+function renderSearchResults(users) {
+    const container = document.getElementById("newChatResults");
     if (!container) return;
     
     if (!users || users.length === 0) {
@@ -491,12 +486,13 @@ function renderContactsList(users) {
     
     let html = "";
     for (const user of users) {
+        const phoneDisplay = user.phone ? ` • ${user.phone}` : "";
         html += `
-            <div class="contact-item" onclick="addContact('${user.uid}', '${user.displayName || 'User'}')">
+            <div class="contact-item" onclick="startChatWithUser('${user.uid}', '${user.displayName || 'User'}')">
                 <div class="contact-avatar">👤</div>
                 <div class="contact-info">
                     <h3>${user.displayName || "Unknown"}</h3>
-                    <p>${user.uid}</p>
+                    <p>${user.email}${phoneDisplay}</p>
                 </div>
             </div>
         `;
@@ -505,28 +501,39 @@ function renderContactsList(users) {
     container.innerHTML = html;
 }
 
-async function addContact(uid, displayName) {
+function searchContacts() {
+    // Focus on search input when search button is clicked
+    const searchInput = document.getElementById("newChatSearch");
+    if (searchInput) {
+        searchInput.focus();
+    }
+}
+
+async function startChatWithUser(uid, displayName) {
     if (!firebaseInitialized || !auth?.currentUser) return;
     
     try {
-        const { setDoc, doc, collection, query, where, getDocs } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const { setDoc, doc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
         
-        // Create conversation
+        // Create conversation ID
         const conversationId = [auth.currentUser.uid, uid].sort().join("_");
         
+        // Create/update conversation in Firestore
         await setDoc(doc(db, "conversations", conversationId), {
             participants: [auth.currentUser.uid, uid],
             lastMessage: "",
             updatedAt: new Date()
         }, { merge: true });
         
-        showSuccess("Chat started with " + displayName);
-        setTimeout(() => {
-            window.location.href = "chats.html";
-        }, 500);
+        // Save uid to localStorage for chat.html to use
+        localStorage.setItem("currentChatUid", uid);
+        localStorage.setItem("currentChatName", displayName);
+        
+        // Open chat.html
+        window.location.href = "chat.html";
         
     } catch (error) {
-        console.error("Error adding contact:", error);
+        console.error("Error starting chat:", error);
         showError("Failed to start chat");
     }
 }
@@ -585,9 +592,17 @@ document.addEventListener("DOMContentLoaded", async () => {
             loadChats();
         }
         
-        // Load contacts if on new-chat page
+        // Initialize search on new-chat page (don't load all users)
         if (currentPage === "new-chat.html") {
-            renderAllUsers();
+            const searchInput = document.getElementById("newChatSearch");
+            if (searchInput) {
+                searchInput.addEventListener("input", searchContactsInput);
+            }
+            // Show initial message
+            const resultsContainer = document.getElementById("newChatResults");
+            if (resultsContainer) {
+                resultsContainer.innerHTML = '<div class="message received"><p>Search by username or phone number</p></div>';
+            }
         }
     } else if (!firebaseInitialized) {
         const currentPage = window.location.pathname.split("/").pop();
@@ -611,9 +626,9 @@ window.goBack = goBack;
 window.openMenu = openMenu;
 window.newChat = newChat;
 window.openChat = openChat;
-window.addContact = addContact;
+window.startChatWithUser = startChatWithUser;
+window.searchContactsInput = searchContactsInput;
 window.searchContacts = searchContacts;
-window.renderAllUsers = renderAllUsers;
 window.toggleLoginPassword = toggleLoginPassword;
 window.toggleSignupPassword = toggleSignupPassword;
 window.toggleConfirmPassword = toggleConfirmPassword;
