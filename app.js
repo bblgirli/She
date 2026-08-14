@@ -8,7 +8,6 @@ const CURRENT_USER_KEY = "she_current_user";
 
 let auth = null;
 let db = null;
-let storage = null;
 let firebaseApp = null;
 let firebaseInitialized = false;
 
@@ -35,12 +34,10 @@ async function initializeFirebase() {
         const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
         const { getAuth, setPersistence, browserLocalPersistence } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
         const { getFirestore } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
-        const { getStorage } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js");
         
         firebaseApp = initializeApp(firebaseConfig);
         auth = getAuth(firebaseApp);
         db = getFirestore(firebaseApp);
-        storage = getStorage(firebaseApp);
         
         await setPersistence(auth, browserLocalPersistence);
         
@@ -575,21 +572,22 @@ function editAbout() {
 }
 
 async function uploadProfilePhoto(file) {
-    if (!file || !auth?.currentUser || !storage) {
+    if (!file || !auth?.currentUser) {
         return "";
     }
 
-    try {
-        const { ref, uploadBytes, getDownloadURL } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js");
-        const extension = (file.name.split(".").pop() || "jpg").toLowerCase();
-        const storageRef = ref(storage, `profile-photos/${auth.currentUser.uid}/${Date.now()}.${extension}`);
-        await uploadBytes(storageRef, file);
-        return await getDownloadURL(storageRef);
-    } catch (error) {
-        console.error("Error uploading image:", error);
-        showError("Failed to upload image");
-        return "";
-    }
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            resolve(event.target?.result || "");
+        };
+        reader.onerror = () => {
+            console.error("Error reading file");
+            showError("Failed to read image");
+            resolve("");
+        };
+        reader.readAsDataURL(file);
+    });
 }
 
 async function changeProfilePhoto() {
