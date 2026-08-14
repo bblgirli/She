@@ -678,9 +678,16 @@ function goBack() {
 }
 
 function openMenu() {
-    alert("Menu: Settings, Profile, Logout");
-    if (confirm("Logout?")) {
-        logout();
+    const choice = prompt("Menu:\n1. Profile\n2. Settings\n3. Logout\n\nEnter 1, 2, or 3:");
+    
+    if (choice === "1") {
+        window.location.href = "profile.html";
+    } else if (choice === "2") {
+        window.location.href = "settings.html";
+    } else if (choice === "3") {
+        if (confirm("Are you sure you want to logout?")) {
+            logout();
+        }
     }
 }
 
