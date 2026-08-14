@@ -1803,31 +1803,6 @@ async function sendImageMessage(imageData) {
     }
 }
 
-function attachFile() {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/*";
-    input.style.display = "none";
-
-    input.onchange = async () => {
-        const file = input.files?.[0];
-        if (!file) return;
-
-        try {
-            // Compress image
-            const compressedData = await compressImage(file);
-            await sendImageMessage(compressedData);
-        } catch (error) {
-            console.error("Error sending image:", error);
-            showError("Failed to send image");
-        }
-    };
-
-    document.body.appendChild(input);
-    input.click();
-    input.remove();
-}
-
 async function openCamera() {
     try {
         // Request camera permission
