@@ -7,7 +7,7 @@
 
     <meta
         name="viewport"
-        content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no, maximum-scale=1, minimum-scale=1"
+        content="width=device-width, initial-scale=1.0"
     >
 
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -35,7 +35,7 @@
 
         <div class="header-actions">
 
-            <button onclick="searchContacts()">
+            <button onclick="searchCalls()">
                 🔍
             </button>
 
@@ -50,37 +50,228 @@
 
     <main class="calls-list">
 
-        <div id="emptyCallsMessage" style="display: none;">
-            <div class="message received">
-                <p>📞 Your recent calls will appear here</p>
+
+        <!-- CREATE CALL LINK -->
+
+        <div class="call-link-item">
+
+            <div class="call-link-icon">
+                🔗
             </div>
+
+            <div class="call-details">
+
+                <h3>
+                    Create call link
+                </h3>
+
+                <p>
+                    Share a link for your call
+                </p>
+
+            </div>
+
         </div>
 
-        <div id="callsList"></div>
+
+        <h4 class="section-title">
+            Recent
+        </h4>
+
+
+        <!-- CALL 1 -->
+
+        <div class="call-item">
+
+            <div class="avatar">
+                👩🏾
+            </div>
+
+            <div class="call-details">
+
+                <h3>
+                    Oluwatosin
+                </h3>
+
+                <p class="outgoing">
+                    ↗ Outgoing • Today, 9:15 AM
+                </p>
+
+            </div>
+
+            <button
+                class="call-button"
+                onclick="startCall()"
+            >
+                📞
+            </button>
+
+        </div>
+
+
+        <!-- CALL 2 -->
+
+        <div class="call-item">
+
+            <div class="avatar">
+                👨🏾
+            </div>
+
+            <div class="call-details">
+
+                <h3>
+                    Abdullahi
+                </h3>
+
+                <p class="incoming">
+                    ↙ Incoming • Today, 8:40 AM
+                </p>
+
+            </div>
+
+            <button
+                class="call-button"
+                onclick="startCall()"
+            >
+                📞
+            </button>
+
+        </div>
+
+
+        <!-- MISSED CALL -->
+
+        <div class="call-item missed">
+
+            <div class="avatar">
+                👩🏾
+            </div>
+
+            <div class="call-details">
+
+                <h3>
+                    Jane
+                </h3>
+
+                <p class="missed-call">
+                    ↙ Missed • Today, 7:32 AM
+                </p>
+
+            </div>
+
+            <button
+                class="call-button"
+                onclick="startCall()"
+            >
+                📞
+            </button>
+
+        </div>
+
+
+        <!-- VIDEO CALL -->
+
+        <div class="call-item">
+
+            <div class="avatar">
+                👨🏾
+            </div>
+
+            <div class="call-details">
+
+                <h3>
+                    Michael
+                </h3>
+
+                <p class="incoming">
+                    ↙ Incoming video • Yesterday
+                </p>
+
+            </div>
+
+            <button
+                class="call-button"
+                onclick="startVideoCall()"
+            >
+                📹
+            </button>
+
+        </div>
+
+
+        <!-- GROUP CALL -->
+
+        <div class="call-item">
+
+            <div class="avatar group-avatar">
+                👥
+            </div>
+
+            <div class="call-details">
+
+                <h3>
+                    Development Team
+                </h3>
+
+                <p class="outgoing">
+                    ↗ Outgoing group call • Yesterday
+                </p>
+
+            </div>
+
+            <button
+                class="call-button"
+                onclick="startCall()"
+            >
+                📞
+            </button>
+
+        </div>
+
 
     </main>
 
 
     <nav class="bottom-nav">
 
-        <button class="nav-item" onclick="goTo('chats.html')">
+        <button
+            class="nav-item"
+            onclick="goTo('chats.html')"
+        >
+
             <span>💬</span>
             <small>Chats</small>
+
         </button>
+
 
         <button class="nav-item active">
+
             <span>📞</span>
             <small>Calls</small>
+
         </button>
 
-        <button class="nav-item" onclick="goTo('status.html')">
+
+        <button
+            class="nav-item"
+            onclick="goTo('status.html')"
+        >
+
             <span>◉</span>
             <small>Status</small>
+
         </button>
 
-        <button class="nav-item" onclick="goTo('contacts.html')">
+
+        <button
+            class="nav-item"
+            onclick="goTo('contacts.html')"
+        >
+
             <span>👤</span>
             <small>Contacts</small>
+
         </button>
 
     </nav>

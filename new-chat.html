@@ -7,7 +7,7 @@
 
     <meta
         name="viewport"
-        content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no, maximum-scale=1, minimum-scale=1"
+        content="width=device-width, initial-scale=1.0"
     >
 
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -41,14 +41,18 @@
         <input
             type="search"
             id="newChatSearch"
-            placeholder="Search users by name or email"
+            placeholder="Search users on this app"
             oninput="searchContactsInput(event)"
         >
     </div>
 
     <main class="new-chat-list">
 
-        <div class="new-chat-action" onclick="goTo('new-group.html')">
+
+        <div
+            class="new-chat-action"
+            onclick="createGroup()"
+        >
 
             <div class="new-chat-icon">
                 👥
@@ -61,14 +65,18 @@
                 </h3>
 
                 <p>
-                    Create a group chat
+                    Create a group
                 </p>
 
             </div>
 
         </div>
 
-        <div class="new-chat-action" onclick="createContact()">
+
+        <div
+            class="new-chat-action"
+            onclick="createContact()"
+        >
 
             <div class="new-chat-icon">
                 👤
@@ -81,20 +89,21 @@
                 </h3>
 
                 <p>
-                    Add by email address
+                    Add a new contact
                 </p>
 
             </div>
 
         </div>
 
+
         <h4 class="section-title">
-            Suggested contacts
+            Contacts on this app
         </h4>
 
         <div id="newChatResults">
             <div class="message received">
-                <p>Search by name, email, or phone number</p>
+                <p>Your saved contacts will appear here once you add someone by phone number.</p>
             </div>
         </div>
 
@@ -105,5 +114,4 @@
 <script type="module" src="app.js"></script>
 
 </body>
-
 </html>

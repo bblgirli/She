@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no, maximum-scale=1, minimum-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#078b59">
@@ -44,19 +44,19 @@
 
     <div class="chat-tabs">
 
-        <button class="active" onclick="filterChatsByTab('all')">
+        <button class="active">
             All
         </button>
 
-        <button onclick="filterChatsByTab('unread')">
+        <button>
             Unread
         </button>
 
-        <button onclick="filterChatsByTab('favorites')">
+        <button>
             Favorites
         </button>
 
-        <button onclick="filterChatsByTab('groups')">
+        <button>
             Groups
         </button>
 
@@ -85,14 +85,14 @@
         </button>
         <button
             class="nav-item"
-            onclick="goTo('calls.html')"
+            onclick="alert('Calls page coming next')"
         >
             <span>📞</span>
             <small>Calls</small>
         </button>
         <button
             class="nav-item"
-            onclick="goTo('status.html')"
+            onclick="alert('Status page coming next')"
         >
             <span>◉</span>
             <small>Status</small>
@@ -100,7 +100,7 @@
         </button>
         <button
             class="nav-item"
-            onclick="goTo('contacts.html')"
+            onclick="alert('Contacts page coming next')"
         >
             <span>👤</span>
             <small>Contacts</small>

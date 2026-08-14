@@ -7,7 +7,7 @@
 
     <meta
         name="viewport"
-        content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no, maximum-scale=1, minimum-scale=1"
+        content="width=device-width, initial-scale=1.0"
     >
 
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -31,24 +31,29 @@
 
         <button onclick="goBack()">←</button>
 
-        <h2 id="groupTitle">Group Info</h2>
+        <h2>Group Info</h2>
 
-        <button onclick="openMenu()">⋮</button>
+        <button>⋮</button>
 
     </header>
 
 
     <main class="group-info-page">
 
+
         <div class="group-info-photo">
             👥
         </div>
 
-        <h2 id="groupName">Development Team</h2>
 
-        <p class="group-description" id="groupMemberCount">
+        <h2>
+            Development Team
+        </h2>
+
+        <p class="group-description">
             5 participants
         </p>
+
 
         <div class="group-info-actions">
 
@@ -69,43 +74,98 @@
 
         </div>
 
+
         <div class="info-section">
 
             <h4>
                 Participants
             </h4>
 
-            <div id="participantsList">
 
-                <div class="participant">
+            <div class="participant">
 
-                    <div class="avatar">
-                        👤
-                    </div>
+                <div class="avatar">
+                    👤
+                </div>
 
-                    <div>
-                        <h3>
-                            You
-                        </h3>
+                <div>
+                    <h3>
+                        You
+                    </h3>
 
-                        <p>
-                            Group admin
-                        </p>
-                    </div>
+                    <p>
+                        Group admin
+                    </p>
+                </div>
 
+            </div>
+
+
+            <div class="participant">
+
+                <div class="avatar">
+                    👩🏾
+                </div>
+
+                <div>
+                    <h3>
+                        Oluwatosin
+                    </h3>
+
+                    <p>
+                        Available
+                    </p>
+                </div>
+
+            </div>
+
+
+            <div class="participant">
+
+                <div class="avatar">
+                    👨🏾
+                </div>
+
+                <div>
+                    <h3>
+                        Abdullahi
+                    </h3>
+
+                    <p>
+                        Available
+                    </p>
+                </div>
+
+            </div>
+
+
+            <div class="participant">
+
+                <div class="avatar">
+                    👩🏾
+                </div>
+
+                <div>
+                    <h3>
+                        Jane
+                    </h3>
+
+                    <p>
+                        Busy
+                    </p>
                 </div>
 
             </div>
 
         </div>
 
-        <div class="info-section danger-zone">
 
-            <button onclick="leaveGroup()" class="danger-button">
-                Leave Group
-            </button>
-
-        </div>
+        <button
+            class="danger-button"
+            onclick="leaveGroup()"
+        >
+            Exit Group
+        </button>
 
     </main>
 
@@ -114,5 +174,4 @@
 <script type="module" src="app.js"></script>
 
 </body>
-
 </html>
