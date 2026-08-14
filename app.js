@@ -81,7 +81,15 @@ async function initializeFirebaseCore() {
         const [appModule, authModule, firestoreModule] = modules;
 
         window.showDebug("✅ Modules loaded");
-        firebaseAuthModule = authModule;
+        // Make sure we expose GoogleAuthProvider from auth module
+        firebaseAuthModule = {
+            ...authModule,
+            GoogleAuthProvider: authModule.GoogleAuthProvider || class GoogleAuthProvider {
+                constructor() {
+                    this.providerId = 'google.com';
+                }
+            }
+        };
         firebaseFirestoreModule = firestoreModule;
 
         console.log("initializeFirebaseCore: before app init");
@@ -818,6 +826,7 @@ async function handleLogin(event) {
     window.showDebug("   auth: " + (auth ? "✅" : "❌"));
     window.showDebug("   firebaseAuthModule: " + (firebaseAuthModule ? "✅" : "❌"));
     window.showDebug("   configured: " + (configured ? "✅" : "❌"));
+    window.showDebug("   firebaseError: " + (firebaseError || "none"));
     
     ensureAccountSeed();
     const loginValue = document.getElementById("loginEmail").value.trim().toLowerCase();
@@ -841,9 +850,24 @@ async function handleLogin(event) {
             redirectToChats();
             return;
         } catch (error) {
-            window.showDebug("❌ Firebase login error: " + (error?.code || "unknown") + " - " + (error?.message || String(error)));
+            const errorCode = error?.code || "unknown";
+            const errorMessage = error?.message || String(error);
+            window.showDebug("❌ Firebase login error: " + errorCode + " - " + errorMessage);
             console.error("Firebase login error:", error);
-            showError("Firebase auth failed: " + (error?.message || String(error)));
+            
+            // Provide more specific error messages
+            let userMessage = errorMessage;
+            if (errorCode === "auth/user-not-found") {
+                userMessage = "No account found with this email. Please sign up first.";
+            } else if (errorCode === "auth/wrong-password") {
+                userMessage = "Incorrect password. Please try again.";
+            } else if (errorCode === "auth/invalid-email") {
+                userMessage = "Invalid email format.";
+            } else if (errorCode === "auth/too-many-requests") {
+                userMessage = "Too many failed login attempts. Please try again later.";
+            }
+            
+            showError("Firebase auth failed: " + userMessage);
             return;
         }
     }
@@ -1018,6 +1042,7 @@ async function googleLogin() {
     window.showDebug("✅ googleLogin: Firebase init complete");
     window.showDebug("   auth: " + (auth ? "✅" : "❌"));
     window.showDebug("   firebaseAuthModule: " + (firebaseAuthModule ? "✅" : "❌"));
+    window.showDebug("   GoogleAuthProvider available: " + (firebaseAuthModule?.GoogleAuthProvider ? "✅" : "❌"));
 
     if (!auth || !firebaseAuthModule) {
         window.showDebug("❌ Firebase modules not ready for Google login");
@@ -1027,14 +1052,45 @@ async function googleLogin() {
 
     try {
         window.showDebug("🔥 Creating Google provider...");
-        const provider = new firebaseAuthModule.GoogleAuthProvider();
+        
+        // Check if GoogleAuthProvider is available
+        if (!firebaseAuthModule.GoogleAuthProvider) {
+            window.showDebug("❌ GoogleAuthProvider not found in firebaseAuthModule");
+            window.showDebug("   Available methods: " + Object.keys(firebaseAuthModule).slice(0, 10).join(", ") + "...");
+            showError("Google provider not available in Firebase Auth module.");
+            return;
+        }
+        
+        const GoogleAuthProvider = firebaseAuthModule.GoogleAuthProvider;
+        const provider = new GoogleAuthProvider();
+        
+        window.showDebug("✅ Google provider created successfully");
         window.showDebug("🔥 Calling signInWithRedirect...");
+        
+        if (!firebaseAuthModule.signInWithRedirect) {
+            window.showDebug("❌ signInWithRedirect not found");
+            showError("Sign-in method not available.");
+            return;
+        }
+        
         await firebaseAuthModule.signInWithRedirect(auth, provider);
         window.showDebug("✅ Google redirect initiated");
     } catch (error) {
-        window.showDebug("❌ Google login error: " + (error?.code || "unknown") + " - " + (error?.message || String(error)));
+        const errorCode = error?.code || "unknown";
+        const errorMessage = error?.message || String(error);
+        window.showDebug("❌ Google login error: " + errorCode + " - " + errorMessage);
         console.error("Google login error:", error);
-        showError("Google sign-in failed: " + (error?.message || String(error)));
+        
+        let userMessage = errorMessage;
+        if (errorCode === "auth/popup-closed-by-user") {
+            userMessage = "Sign-in popup was closed. Please try again.";
+        } else if (errorCode === "auth/cancelled-popup-request") {
+            userMessage = "Sign-in was cancelled. Please try again.";
+        } else if (errorCode === "auth/operation-not-allowed") {
+            userMessage = "Google sign-in is not enabled. Check Firebase Console settings.";
+        }
+        
+        showError("Google sign-in failed: " + userMessage);
     }
 }
 function editProfileName() { window.location.href = "edit-profile.html"; }
