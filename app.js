@@ -480,7 +480,8 @@ async function loadUserProfile() {
         
         if (userDoc.exists()) {
             const userData = userDoc.data();
-            const localPhotoURL = getProfilePhotoFromStorage(auth.currentUser.uid);
+            // Check Firestore first, then localStorage as fallback
+            const photoURL = userData.photoData || getProfilePhotoFromStorage(auth.currentUser.uid);
             
             // Display on profile page
             const profileName = document.getElementById("profileName");
@@ -495,7 +496,7 @@ async function loadUserProfile() {
             if (profileEmail) profileEmail.textContent = userData.email || "";
             if (profilePhone) profilePhone.textContent = userData.phone || "Not set";
             if (profileAbout) profileAbout.textContent = userData.about || "Available";
-            setAvatarElement(profilePhoto, localPhotoURL, "👤");
+            setAvatarElement(profilePhoto, photoURL, "👤");
             
             // Load into edit page
             const editName = document.getElementById("editName");
@@ -506,9 +507,14 @@ async function loadUserProfile() {
             
             if (editName) editName.value = userData.displayName || "";
             if (editAbout) editAbout.value = userData.about || "";
-            if (editPhotoURL) editPhotoURL.value = localPhotoURL ? "[Photo stored locally]" : "";
+            if (editPhotoURL) editPhotoURL.value = photoURL ? "[Photo stored]" : "";
             if (editPhone) editPhone.value = userData.phone || "";
-            setAvatarElement(editProfilePhoto, localPhotoURL, "👤");
+            setAvatarElement(editProfilePhoto, photoURL, "👤");
+            
+            // Cache in localStorage for next load
+            if (photoURL) {
+                localStorage.setItem(`profilePhoto_${auth.currentUser.uid}`, photoURL);
+            }
             
             return userData;
         }
@@ -624,7 +630,19 @@ async function uploadProfilePhoto(file) {
     const compressedURL = await compressImage(file, 150, 150, 0.4);
     if (!compressedURL) return "";
 
-    // Store in localStorage instead of Firestore
+    // Store compressed image in Firestore
+    try {
+        const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        await updateDoc(doc(db, "users", auth.currentUser.uid), {
+            photoData: compressedURL
+        });
+    } catch (error) {
+        console.error("Error saving photo to Firestore:", error);
+        showError("Failed to sync photo");
+        return "";
+    }
+
+    // Also store locally for instant display
     const storageKey = `profilePhoto_${auth.currentUser.uid}`;
     localStorage.setItem(storageKey, compressedURL);
 
@@ -669,7 +687,7 @@ async function changeProfilePhoto() {
 // ============================================
 async function loadMessages() {
     const chatUid = localStorage.getItem("currentChatUid");
-    const chatName = localStorage.getItem("currentChatName");
+    let chatName = localStorage.getItem("currentChatName");
     
     if (!chatUid || !firebaseInitialized || !auth?.currentUser) {
         console.error("Missing chat info");
@@ -680,13 +698,20 @@ async function loadMessages() {
         const chatHeader = document.querySelector(".chat-profile h3");
         const chatStatus = document.querySelector(".chat-profile p");
         const chatAvatar = document.querySelector(".small-avatar");
-        if (chatHeader) chatHeader.textContent = chatName || "Chat";
-        if (chatStatus) chatStatus.textContent = "online";
         
         const { doc, getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
         const userSnap = await getDoc(doc(db, "users", chatUid));
         const otherUserData = userSnap.data() || {};
-        setAvatarElement(chatAvatar, otherUserData.photoURL, "👤");
+        
+        // If no name in localStorage, get from Firestore
+        if (!chatName) {
+            chatName = otherUserData.displayName || "User";
+            localStorage.setItem("currentChatName", chatName);
+        }
+        
+        if (chatHeader) chatHeader.textContent = chatName || "Chat";
+        if (chatStatus) chatStatus.textContent = "online";
+        setAvatarElement(chatAvatar, otherUserData.photoData, "👤");
         
         const conversationId = getConversationId(auth.currentUser.uid, chatUid);
         await markMessagesAsRead(conversationId);
@@ -713,8 +738,8 @@ async function listenToUserPresence(chatUid) {
             const avatarEl = document.querySelector(".small-avatar");
             if (!statusEl) return;
 
-            if (userData.photoURL) {
-                setAvatarElement(avatarEl, userData.photoURL, "👤");
+            if (userData.photoData) {
+                setAvatarElement(avatarEl, userData.photoData, "👤");
             }
 
             if (userData.online === true) {
@@ -1048,8 +1073,8 @@ async function renderChatList() {
         const hasUnread = unreadCount > 0;
         const preview = getPreviewText(chat.lastMessage);
         const lastTime = formatMessageTime(chat.lastMessageTime || chat.updatedAt);
-        const avatarMarkup = otherUser.photoURL
-            ? `<img src="${otherUser.photoURL}" alt="Profile photo" />`
+        const avatarMarkup = otherUser.photoData
+            ? `<img src="${otherUser.photoData}" alt="Profile photo" />`
             : "👤";
 
         html += `
@@ -1120,8 +1145,8 @@ function renderSearchResults(users) {
     let html = "";
     for (const user of users) {
         const phoneDisplay = user.phone ? ` • ${user.phone}` : "";
-        const avatarMarkup = user.photoURL
-            ? `<img src="${user.photoURL}" alt="Profile photo" />`
+        const avatarMarkup = user.photoData
+            ? `<img src="${user.photoData}" alt="Profile photo" />`
             : "👤";
 
         html += `
@@ -1158,8 +1183,8 @@ async function loadContactsPage() {
         }
 
         container.innerHTML = users.map((user) => {
-            const avatarMarkup = user.photoURL
-                ? `<img src="${user.photoURL}" alt="${user.displayName || "User"} profile" />`
+            const avatarMarkup = user.photoData
+                ? `<img src="${user.photoData}" alt="${user.displayName || "User"} profile" />`
                 : "👤";
             return `
                 <div class="contact-item" onclick="startChatWithUser('${user.uid}', '${user.displayName || 'User'}')">
@@ -1214,6 +1239,17 @@ async function startChatWithUser(uid, displayName) {
 async function openChat(uid) {
     currentChatUid = uid;
     localStorage.setItem("currentChatUid", uid);
+
+    // Fetch the other user's display name from Firestore
+    try {
+        const { doc, getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const userSnap = await getDoc(doc(db, "users", uid));
+        const userData = userSnap.data() || {};
+        localStorage.setItem("currentChatName", userData.displayName || "User");
+    } catch (error) {
+        console.error("Error fetching user name:", error);
+        localStorage.setItem("currentChatName", "User");
+    }
 
     const conversationId = getConversationId(auth.currentUser.uid, uid);
     await markMessagesAsRead(conversationId);
