@@ -538,36 +538,68 @@ async function loadMessages() {
 
 async function setupMessageListener(conversationId) {
     try {
-        const { collection, query, orderBy, onSnapshot } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const { collection, query, orderBy, onSnapshot, doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
         
         const messagesRef = collection(db, "conversations", conversationId, "messages");
         const q = query(messagesRef, orderBy("createdAt", "asc"));
         
-        // Set up real-time listener
         if (messagesUnsubscribe) messagesUnsubscribe();
         
-        messagesUnsubscribe = onSnapshot(q, (snapshot) => {
+        messagesUnsubscribe = onSnapshot(q, async (snapshot) => {
             const messagesContainer = document.getElementById("messages");
-            messagesContainer.innerHTML = ""; // Clear previous messages
-            
-            snapshot.forEach((doc) => {
-                const message = doc.data();
+            if (!messagesContainer) return;
+
+            const updates = [];
+            snapshot.forEach((messageDoc) => {
+                const message = messageDoc.data();
                 const isOwn = message.senderId === auth.currentUser.uid;
-                
+
+                if (!isOwn && (message.status === "sent" || !message.status)) {
+                    updates.push(updateDoc(doc(db, "conversations", conversationId, "messages", messageDoc.id), {
+                        status: "delivered"
+                    }));
+                }
+
+                if (isOwn && message.status === "sent") {
+                    updates.push(updateDoc(doc(db, "conversations", conversationId, "messages", messageDoc.id), {
+                        status: "read"
+                    }));
+                }
+            });
+
+            if (updates.length > 0) {
+                await Promise.all(updates);
+            }
+
+            messagesContainer.innerHTML = "";
+            snapshot.forEach((messageDoc) => {
+                const message = messageDoc.data();
+                const isOwn = message.senderId === auth.currentUser.uid;
+                const messageStatus = message.status || "sent";
+
                 const messageEl = document.createElement("div");
                 messageEl.className = `message ${isOwn ? "sent" : "received"}`;
-                messageEl.innerHTML = `<p>${escapeHTML(message.text)}</p>`;
-                
+                messageEl.innerHTML = `
+                    <p>${escapeHTML(message.text)}</p>
+                    ${isOwn ? `<span class="status-ticks ${messageStatus}">${getStatusTicks(messageStatus)}</span>` : ""}
+                `;
+
                 messagesContainer.appendChild(messageEl);
             });
-            
-            // Scroll to bottom
+
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         });
         
     } catch (error) {
         console.error("Error setting up listener:", error);
     }
+}
+
+function getStatusTicks(status) {
+    if (status === "sent") return "✓";
+    if (status === "delivered") return "✓✓";
+    if (status === "read") return "✓✓";
+    return "✓";
 }
 
 async function sendMessage() {
@@ -592,13 +624,15 @@ async function sendMessage() {
             senderId: auth.currentUser.uid,
             receiverId: chatUid,
             text: text,
-            createdAt: serverTimestamp()
+            createdAt: serverTimestamp(),
+            status: "sent"
         });
 
         await setDoc(doc(db, "conversations", conversationId), {
             participants: [auth.currentUser.uid, chatUid],
             lastMessage: text,
             lastMessageSenderId: auth.currentUser.uid,
+            lastMessageTime: serverTimestamp(),
             updatedAt: serverTimestamp(),
             unreadBy: [chatUid]
         }, { merge: true });
@@ -628,6 +662,17 @@ function escapeHTML(text) {
 function getPreviewText(text) {
     const safeText = text || "No messages yet";
     return safeText.length > 30 ? safeText.slice(0, 30) + "..." : safeText;
+}
+
+function formatMessageTime(timestamp) {
+    if (!timestamp) return "";
+
+    try {
+        const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp.seconds ? timestamp.seconds * 1000 : timestamp);
+        return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    } catch (error) {
+        return "";
+    }
 }
 
 function getConversationId(uid1, uid2) {
@@ -716,18 +761,21 @@ async function renderChatList() {
         const { getDocs, query, collection, where } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
         const userSnap = await getDocs(query(collection(db, "users"), where("uid", "==", otherUid)));
         const otherUser = userSnap.docs[0]?.data() || { displayName: "Unknown" };
-        const hasUnread = Array.isArray(chat.unreadBy) && chat.unreadBy.includes(auth.currentUser.uid);
+        const unreadCount = Array.isArray(chat.unreadBy) ? chat.unreadBy.length : 0;
+        const hasUnread = unreadCount > 0;
         const preview = getPreviewText(chat.lastMessage);
+        const lastTime = formatMessageTime(chat.lastMessageTime || chat.updatedAt);
 
         html += `
             <div class="chat-item ${hasUnread ? "unread" : ""}" onclick="openChat('${otherUid}')">
                 <div class="chat-info">
                     <div class="chat-top">
                         <h3>${otherUser.displayName || "User"}</h3>
-                        ${hasUnread ? '<span class="unread">1</span>' : ""}
+                        <span class="message-time">${lastTime}</span>
                     </div>
                     <div class="chat-bottom">
                         <p>${preview}</p>
+                        ${hasUnread ? `<span class="unread-badge">${unreadCount}</span>` : ""}
                     </div>
                 </div>
             </div>
