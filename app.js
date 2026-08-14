@@ -799,22 +799,20 @@ async function handleLogin(event) {
             redirectToChats();
             return;
         } catch (error) {
-            const firebaseMessage = error?.message || "Unknown Firebase auth error";
-            window.showDebug("❌ Firebase login error: " + (error?.code || "unknown") + " - " + firebaseMessage);
+            window.showDebug("❌ Firebase login error: " + (error?.code || "unknown") + " - " + (error?.message || String(error)));
             console.error("Firebase login error:", error);
-            showError("Firebase sign-in failed: " + firebaseMessage);
+            showError("Firebase auth failed: " + (error?.message || String(error)));
             return;
         }
     }
 
     if (configured) {
-        window.showDebug("⚠️ Firebase config exists but auth is not initialized");
-        window.showDebug("   configured=" + configured + ", auth=" + !!auth + ", module=" + !!firebaseAuthModule);
-        showError("Firebase auth is not available right now. Please refresh and try again.");
+        window.showDebug("⚠️ Firebase not ready for email login");
+        window.showDebug("   configured=" + configured + ", auth=" + !!auth + ", module=" + !!firebaseAuthModule + ", firebaseError=" + (firebaseError || "none"));
+        showError("Firebase auth is not ready. Check the Firebase auth domain and authorized domains. Last error: " + (firebaseError || "No Firebase error captured."));
         return;
     }
 
-    // Fallback only if Firebase is intentionally not configured.
     window.showDebug("🔥 Attempting local login");
     const state = readState();
     const account = state.accounts.find((entry) => entry.email.toLowerCase() === loginValue && entry.password === password);
@@ -981,7 +979,7 @@ async function googleLogin() {
 
     if (!auth || !firebaseAuthModule) {
         window.showDebug("❌ Firebase modules not ready for Google login");
-        showError("Firebase Google sign-in is unavailable. Please refresh and try again.");
+        showError("Firebase Google sign-in is unavailable. Check Firebase Auth, authorized domains, and the redirect settings. Last error: " + (firebaseError || "No Firebase error captured."));
         return;
     }
 
@@ -992,10 +990,9 @@ async function googleLogin() {
         await firebaseAuthModule.signInWithRedirect(auth, provider);
         window.showDebug("✅ Google redirect initiated");
     } catch (error) {
-        const googleMessage = error?.message || "Unknown Google sign-in error";
-        window.showDebug("❌ Google login error: " + (error?.code || "unknown") + " - " + googleMessage);
+        window.showDebug("❌ Google login error: " + (error?.code || "unknown") + " - " + (error?.message || String(error)));
         console.error("Google login error:", error);
-        showError("Google sign-in failed: " + googleMessage);
+        showError("Google sign-in failed: " + (error?.message || String(error)));
     }
 }
 function editProfileName() { window.location.href = "edit-profile.html"; }
