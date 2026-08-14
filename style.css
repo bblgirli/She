@@ -665,15 +665,15 @@ button {
 }
 
 .status-ticks.sent {
-    color: #999;
+    color: #9aa0a6;
 }
 
 .status-ticks.delivered {
-    color: #999;
+    color: #6a757d;
 }
 
 .status-ticks.read {
-    color: #999;
+    color: #6a757d;
 }
 
 
