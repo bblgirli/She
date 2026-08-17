@@ -10,9 +10,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="She">
 <title>Chat</title>
-<link rel="stylesheet" href="style.css">
-<link rel="stylesheet" href="responsive.css">
-<link rel="stylesheet" href="responsive-fixes.css">
+<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="responsive.css?v=4">
+<link rel="stylesheet" href="responsive-fixes.css?v=5">
 </head>
 <body class="chat-page">
 <div class="chat-app">
@@ -39,14 +39,7 @@
 <button id="micButton" class="mic-button" onmousedown="startVoiceRecording()" ontouchstart="startVoiceRecording()" onmouseup="stopVoiceRecording()" ontouchend="stopVoiceRecording()">🎙️</button>
 </footer>
 <audio id="remoteAudio" autoplay playsinline></audio>
-<div id="permissionsDialog" class="permissions-modal" style="display:none;">
-<div class="permissions-container"><h2>App Permissions</h2><p>She needs these permissions to work properly:</p>
-<div class="permission-item"><input type="checkbox" id="perm-notification" checked disabled><label for="perm-notification"><strong>Notifications</strong><span>Get message alerts and incoming call notifications</span></label></div>
-<div class="permission-item"><input type="checkbox" id="perm-microphone" checked disabled><label for="perm-microphone"><strong>Microphone</strong><span>Record voice messages and make calls</span></label></div>
-<div class="permission-item"><input type="checkbox" id="perm-camera" checked disabled><label for="perm-camera"><strong>Camera</strong><span>Take photos and set profile picture</span></label></div>
-<div class="permission-item"><input type="checkbox" id="perm-media" checked disabled><label for="perm-media"><strong>Media & Files</strong><span>Upload photos and share media</span></label></div>
-<div class="permissions-actions"><button class="btn-allow" onclick="requestAllPermissions()">Allow All</button><button class="btn-skip" onclick="skipPermissions()">Skip for Now</button></div>
-<p class="permission-note">You can change these settings anytime in your browser settings.</p></div></div>
+<div id="permissionsDialog" class="permissions-modal" style="display:none;"><div class="permissions-container"><h2>App Permissions</h2><p>She needs these permissions to work properly:</p><div class="permission-item"><input type="checkbox" id="perm-notification" checked disabled><label for="perm-notification"><strong>Notifications</strong><span>Get message alerts and incoming call notifications</span></label></div><div class="permission-item"><input type="checkbox" id="perm-microphone" checked disabled><label for="perm-microphone"><strong>Microphone</strong><span>Record voice messages and make calls</span></label></div><div class="permission-item"><input type="checkbox" id="perm-camera" checked disabled><label for="perm-camera"><strong>Camera</strong><span>Take photos and set profile picture</span></label></div><div class="permission-item"><input type="checkbox" id="perm-media" checked disabled><label for="perm-media"><strong>Media & Files</strong><span>Upload photos and share media</span></label></div><div class="permissions-actions"><button class="btn-allow" onclick="requestAllPermissions()">Allow All</button><button class="btn-skip" onclick="skipPermissions()">Skip for Now</button></div><p class="permission-note">You can change these settings anytime in your browser settings.</p></div></div>
 <div id="incomingCallScreen" class="call-screen incoming-call-screen" style="display:none;"><div class="call-screen-content"><div class="call-screen-avatar">📱</div><h2>Incoming Call</h2><p id="incomingCallerName">Unknown Caller</p><div class="call-buttons"><button class="call-accept-btn" onclick="answerCall()">✓ Accept</button><button class="call-decline-btn" onclick="declineCall()">✕ Decline</button></div></div></div>
 <div id="outgoingCallScreen" class="call-screen outgoing-call-screen" style="display:none;"><div class="call-screen-content"><div class="call-screen-avatar">📱</div><h2>Calling...</h2><p id="outgoingCalleeName">Unknown</p><div class="call-buttons"><button class="call-end-btn" onclick="endCall()">✕ Cancel</button></div></div></div>
 <div id="ongoingCallScreen" class="call-screen ongoing-call-screen" style="display:none;"><div class="call-screen-content"><div class="call-screen-avatar">📱</div><h2>Call Connected</h2><p id="callDuration">0:00</p><div class="call-buttons"><button class="call-end-btn" onclick="endCall()">✕ End Call</button></div></div></div>
