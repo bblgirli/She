@@ -18,6 +18,7 @@
 .chat-actions .icon-btn,.back-button,.message-input-container .icon-btn,.mic-button{display:inline-flex;align-items:center;justify-content:center}
 .message-input-container .icon-btn{border:0;background:transparent;padding:0;min-width:30px}
 .mic-button svg{width:21px;height:21px}
+.message-input-container .message-action-hidden{display:none!important}
 </style>
 </head>
 <body class="chat-page">
@@ -37,10 +38,10 @@
 <footer class="message-footer">
 <div class="message-input-container">
 <button class="icon-btn" onclick="showEmoji()" aria-label="Emoji"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><path d="M9 9h.01M15 9h.01"/></svg></button>
-<input type="text" id="messageInput" placeholder="Type a message" autocomplete="off" onkeydown="handleEnter(event)">
-<button class="icon-btn" onclick="sendMessage()" aria-label="Send message"><svg viewBox="0 0 24 24" fill="none"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></button>
-<button class="icon-btn" onclick="attachFile()" aria-label="Attach file"><svg viewBox="0 0 24 24" fill="none"><path d="m21.4 11.6-8.9 8.9a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg></button>
-<button class="icon-btn" onclick="openCamera()" aria-label="Camera"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
+<input type="text" id="messageInput" placeholder="Type a message" autocomplete="off" oninput="updateMessageActions()" onkeydown="handleEnter(event)">
+<button id="sendMessageButton" class="icon-btn message-action-hidden" onclick="sendMessage()" aria-label="Send message"><svg viewBox="0 0 24 24" fill="none"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></button>
+<button id="attachButton" class="icon-btn" onclick="attachFile()" aria-label="Attach image"><svg viewBox="0 0 24 24" fill="none"><path d="m21.4 11.6-8.9 8.9a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg></button>
+<button id="cameraButton" class="icon-btn" onclick="openCamera()" aria-label="Camera"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
 </div>
 <div id="voiceRecordingUI" class="voice-recording-ui" style="display:none;">
 <div class="recording-indicator"><span class="recording-dot"></span><span id="recordingTime">0:00</span></div>
@@ -55,6 +56,23 @@
 <div id="outgoingCallScreen" class="call-screen outgoing-call-screen" style="display:none;"><div class="call-screen-content"><div class="call-screen-avatar">📱</div><h2>Calling...</h2><p id="outgoingCalleeName">Unknown</p><div class="call-buttons"><button class="call-end-btn" onclick="endCall()">✕ Cancel</button></div></div></div>
 <div id="ongoingCallScreen" class="call-screen ongoing-call-screen" style="display:none;"><div class="call-screen-content"><div class="call-screen-avatar">📱</div><h2>Call Connected</h2><p id="callDuration">0:00</p><div class="call-buttons"><button class="call-end-btn" onclick="endCall()">✕ End Call</button></div></div></div>
 </div>
+<script>
+function updateMessageActions() {
+  const input = document.getElementById('messageInput');
+  const send = document.getElementById('sendMessageButton');
+  const attach = document.getElementById('attachButton');
+  const camera = document.getElementById('cameraButton');
+  const mic = document.getElementById('micButton');
+  if (!input || !send || !attach || !camera) return;
+  const hasText = input.value.trim().length > 0;
+  send.classList.toggle('message-action-hidden', !hasText);
+  attach.classList.toggle('message-action-hidden', hasText);
+  camera.classList.toggle('message-action-hidden', hasText);
+  if (mic) mic.classList.toggle('message-action-hidden', hasText);
+}
+
+document.addEventListener('DOMContentLoaded', updateMessageActions);
+</script>
 <script type="module" src="app.js"></script>
 </body>
 </html>
