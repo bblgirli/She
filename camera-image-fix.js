@@ -1,0 +1,74 @@
+(() => {
+  // Camera: take a photo, then explicitly preview with Cancel / Send.
+  window.openCamera = function () {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.setAttribute('capture', 'environment');
+    input.style.display = 'none';
+    input.addEventListener('change', () => {
+      const file = input.files && input.files[0];
+      if (!file) { input.remove(); return; }
+      showImagePreview(file, input);
+    }, { once: true });
+    document.body.appendChild(input);
+    input.click();
+  };
+
+  function showImagePreview(file, input) {
+    const url = URL.createObjectURL(file);
+    const old = document.getElementById('cameraImagePreview');
+    if (old) old.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'cameraImagePreview';
+    overlay.innerHTML = `
+      <div class="camera-preview-sheet">
+        <img src="${url}" alt="Photo preview">
+        <div class="camera-preview-actions">
+          <button type="button" class="camera-cancel">Cancel</button>
+          <button type="button" class="camera-send">Send</button>
+        </div>
+      </div>`;
+    const style = document.createElement('style');
+    style.id = 'cameraPreviewStyle';
+    style.textContent = `
+      #cameraImagePreview{position:fixed;inset:0;z-index:100000;background:#000;display:flex;align-items:center;justify-content:center}
+      .camera-preview-sheet{width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:18px;box-sizing:border-box}
+      .camera-preview-sheet img{max-width:100%;max-height:calc(100vh - 120px);object-fit:contain;border-radius:10px}
+      .camera-preview-actions{width:100%;display:flex;justify-content:space-between;gap:16px;margin-top:18px}
+      .camera-preview-actions button{border:0;border-radius:24px;padding:12px 25px;font-size:16px;font-weight:600}
+      .camera-cancel{background:#333;color:#fff}.camera-send{background:#078b59;color:#fff;margin-left:auto}
+    `;
+    document.head.appendChild(style);
+    document.body.appendChild(overlay);
+
+    overlay.querySelector('.camera-cancel').onclick = () => {
+      URL.revokeObjectURL(url); overlay.remove(); input.remove();
+    };
+    overlay.querySelector('.camera-send').onclick = async () => {
+      const btn = overlay.querySelector('.camera-send');
+      btn.disabled = true; btn.textContent = 'Sending...';
+      try {
+        if (typeof window.sendImageFile === 'function') await window.sendImageFile(file);
+        else if (typeof window.sendImage === 'function') await window.sendImage(file);
+        else if (typeof window.attachImageFile === 'function') await window.attachImageFile(file);
+        else throw new Error('Image sender not available');
+        URL.revokeObjectURL(url); overlay.remove(); input.remove();
+      } catch (e) {
+        console.error('Camera image send failed:', e);
+        btn.disabled = false; btn.textContent = 'Send';
+        if (typeof window.showError === 'function') window.showError('Could not send image');
+      }
+    };
+  }
+
+  // Full-quality image preview. Do not resize/re-encode here.
+  window.showImageFullScreen = function(src) {
+    const old = document.getElementById('fullImageViewer'); if (old) old.remove();
+    const box = document.createElement('div'); box.id='fullImageViewer';
+    box.innerHTML=`<button class="full-image-close">×</button><img src="${src}" alt="Shared image"><button class="full-image-save">Save image</button>`;
+    const st=document.createElement('style');st.textContent=`#fullImageViewer{position:fixed;inset:0;z-index:100001;background:#000;display:flex;align-items:center;justify-content:center}#fullImageViewer img{width:100vw;height:100vh;object-fit:contain}#fullImageViewer button{position:absolute;z-index:2;border:0;color:#fff;background:rgba(30,30,30,.72);border-radius:24px;padding:10px 16px;font-size:16px}.full-image-close{top:18px;right:18px;font-size:28px!important}.full-image-save{bottom:22px;left:50%;transform:translateX(-50%)}`;box.appendChild(st);document.body.appendChild(box);
+    box.querySelector('.full-image-close').onclick=()=>box.remove(); box.onclick=e=>{if(e.target===box)box.remove()};
+    box.querySelector('.full-image-save').onclick=async()=>{try{const r=await fetch(src);const b=await r.blob();const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='she-image';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}catch(e){window.open(src,'_blank')}};
+  };
+})();
