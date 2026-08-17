@@ -7,7 +7,7 @@
 
     <meta
         name="viewport"
-        content="width=device-width, initial-scale=1.0"
+        content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     >
 
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -20,6 +20,7 @@
     <title>Chat</title>
 
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="responsive.css">
 
 </head>
 
@@ -140,9 +141,9 @@
                 <div class="pitch-bar"></div>
                 <div class="pitch-bar"></div>
             </div>
-            <button 
-                id="lockRecordingBtn" 
-                class="lock-recording-btn" 
+            <button
+                id="lockRecordingBtn"
+                class="lock-recording-btn"
                 onclick="toggleLockRecording()"
                 title="Lock to record hands-free"
             >
@@ -163,7 +164,7 @@
 
     </footer>
     <!-- Remote Audio -->
-    <audio id="remoteAudio" autoplay playinline></audio>
+    <audio id="remoteAudio" autoplay playsinline></audio>
 
     <!-- Permissions Request Dialog -->
     <div id="permissionsDialog" class="permissions-modal" style="display: none;">
