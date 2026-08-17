@@ -1,22 +1,25 @@
-/* Clean chat layout: header + messages + composer, with no viewport gap */
+/* Final chat viewport layout: fill the visible screen with no bottom gap */
 html.chat-page,
 body.chat-page {
   width: 100% !important;
   height: 100% !important;
-  min-height: 0 !important;
+  min-height: 100% !important;
   margin: 0 !important;
   padding: 0 !important;
   overflow: hidden !important;
 }
 
 .chat-page .chat-app {
-  position: relative !important;
-  inset: auto !important;
+  position: fixed !important;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
   width: 100% !important;
   max-width: 480px !important;
   height: 100vh !important;
   min-height: 0 !important;
-  max-height: 100vh !important;
+  max-height: none !important;
   margin: 0 auto !important;
   padding: 0 !important;
   overflow: hidden !important;
@@ -24,15 +27,13 @@ body.chat-page {
   flex-direction: column !important;
 }
 
-@supports (height: 100svh) {
+@supports (height: 100dvh) {
   .chat-page .chat-app {
-    height: 100svh !important;
-    max-height: 100svh !important;
+    height: 100dvh !important;
   }
 }
 
 .chat-page .chat-header {
-  position: relative !important;
   flex: 0 0 60px !important;
   width: 100% !important;
   height: 60px !important;
@@ -57,37 +58,41 @@ body.chat-page {
 
 .chat-page .typing-indicator {
   flex: 0 0 auto !important;
+  margin: 0 !important;
 }
 
 .chat-page .message-footer {
   position: relative !important;
-  inset: auto !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
   transform: none !important;
-  flex: 0 0 72px !important;
+  flex: 0 0 64px !important;
   width: 100% !important;
   max-width: 480px !important;
-  height: 72px !important;
-  min-height: 72px !important;
-  max-height: 72px !important;
+  height: 64px !important;
+  min-height: 64px !important;
+  max-height: 64px !important;
   margin: 0 !important;
-  padding: 8px !important;
+  padding: 6px 8px !important;
   box-sizing: border-box !important;
   display: flex !important;
   align-items: center !important;
-  gap: 7px !important;
+  gap: 6px !important;
   visibility: visible !important;
   opacity: 1 !important;
   overflow: visible !important;
-  z-index: 2 !important;
+  z-index: 5 !important;
 }
 
 .chat-page .message-input-container {
   flex: 1 1 auto !important;
   min-width: 0 !important;
   width: auto !important;
-  height: 48px !important;
-  min-height: 48px !important;
-  max-height: 48px !important;
+  height: 44px !important;
+  min-height: 44px !important;
+  max-height: 44px !important;
   box-sizing: border-box !important;
   overflow: hidden !important;
 }
@@ -96,16 +101,16 @@ body.chat-page {
   flex: 1 1 auto !important;
   min-width: 0 !important;
   width: auto !important;
-  height: auto !important;
+  height: 38px !important;
   max-width: none !important;
 }
 
 .chat-page .mic-button {
-  flex: 0 0 48px !important;
-  width: 48px !important;
-  min-width: 48px !important;
-  height: 48px !important;
-  min-height: 48px !important;
+  flex: 0 0 42px !important;
+  width: 42px !important;
+  min-width: 42px !important;
+  height: 42px !important;
+  min-height: 42px !important;
   margin: 0 !important;
 }
 
@@ -117,9 +122,9 @@ body.chat-page {
 
 @media (max-width: 380px) {
   .chat-page .chat-header { padding-left: 6px !important; padding-right: 6px !important; }
-  .chat-page .chat-actions { gap: 6px !important; }
-  .chat-page .chat-actions button { font-size: 18px !important; }
-  .chat-page .message-footer { gap: 4px !important; padding-left: 5px !important; padding-right: 5px !important; }
-  .chat-page .message-input-container { min-width: 0 !important; }
-  .chat-page .mic-button { flex-basis: 44px !important; width: 44px !important; min-width: 44px !important; height: 44px !important; min-height: 44px !important; }
+  .chat-page .chat-actions { gap: 5px !important; }
+  .chat-page .chat-actions button { font-size: 17px !important; }
+  .chat-page .message-footer { gap: 3px !important; padding-left: 4px !important; padding-right: 4px !important; }
+  .chat-page .message-input-container button { width: 28px !important; min-width: 28px !important; padding: 2px !important; }
+  .chat-page .mic-button { flex-basis: 40px !important; width: 40px !important; min-width: 40px !important; height: 40px !important; min-height: 40px !important; }
 }
