@@ -1,10 +1,6 @@
 (()=>{
   const page=(location.pathname.split('/').pop()||'').toLowerCase();
-  const targets={
-    'chats.html':'.phone-app',
-    'chat.html':'.chat-app',
-    'app.html':'.phone-app'
-  };
+  const targets={'chats.html':'.phone-app','chat.html':'.chat-app','app.html':'.phone-app'};
   const selector=targets[page];
   if(!selector)return;
   const key='she_screen_snapshot_'+page;
@@ -23,17 +19,25 @@
     try{
       const el=get(),html=localStorage.getItem(key);
       if(!el||!html)return false;
+      // Never replace a live chat DOM after the chat scripts have attached
+      // listeners. Doing so breaks long-press, scrolling, input and other
+      // interactions. The live Firebase screen should update quietly instead.
+      if(page==='chat.html' && el.querySelector('#messages .message')) return false;
       restoring=true;
       el.innerHTML=html;
       el.dataset.silentRestored='1';
       restoring=false;
+      window.dispatchEvent(new CustomEvent('sheScreenRestored'));
       return true;
     }catch(_){restoring=false;return false;}
   };
   const boot=()=>{
     restore();
-    setTimeout(restore,80);
-    setTimeout(restore,350);
+    // For chat.html, do not repeatedly replace the live DOM.
+    if(page!=='chat.html'){
+      setTimeout(restore,80);
+      setTimeout(restore,350);
+    }
   };
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
   window.addEventListener('pagehide',save);
