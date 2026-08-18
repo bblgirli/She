@@ -54,9 +54,31 @@ body.chat-page {
     -webkit-overflow-scrolling: touch;
 }
 
-.chat-page .message {
-    max-width: min(78%, 420px);
+/* WhatsApp-style message sizing: the bubble hugs its content. */
+.chat-page .messages .message {
+    width: fit-content !important;
+    max-width: min(78%, 420px) !important;
+    min-width: 0 !important;
+    display: block !important;
+    flex: 0 1 auto !important;
+    align-self: flex-start;
     overflow-wrap: anywhere;
+}
+
+.chat-page .messages .message.sent,
+.chat-page .messages .message.outgoing,
+.chat-page .messages .message.me {
+    align-self: flex-end;
+}
+
+/* Common inner bubble/content wrappers must not stretch the outer bubble. */
+.chat-page .messages .message > .message-body,
+.chat-page .messages .message > .message-content,
+.chat-page .messages .message > .bubble,
+.chat-page .messages .message > .message-bubble {
+    width: fit-content !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
 }
 
 .chat-page .message-footer {
