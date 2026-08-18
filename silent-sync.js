@@ -19,10 +19,9 @@
     try{
       const el=get(),html=localStorage.getItem(key);
       if(!el||!html)return false;
-      // Never replace a live chat DOM after the chat scripts have attached
-      // listeners. Doing so breaks long-press, scrolling, input and other
-      // interactions. The live Firebase screen should update quietly instead.
-      if(page==='chat.html' && el.querySelector('#messages .message')) return false;
+      // A live chat must never be replaced: replacing its DOM resets scroll,
+      // destroys touch state and can make the viewport jump/shake.
+      if(page==='chat.html')return false;
       restoring=true;
       el.innerHTML=html;
       el.dataset.silentRestored='1';
@@ -33,7 +32,6 @@
   };
   const boot=()=>{
     restore();
-    // For chat.html, do not repeatedly replace the live DOM.
     if(page!=='chat.html'){
       setTimeout(restore,80);
       setTimeout(restore,350);
@@ -42,5 +40,7 @@
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
   window.addEventListener('pagehide',save);
   window.addEventListener('beforeunload',save);
+  // Save only; never write the snapshot back into a live chat while the user
+  // is reading or scrolling.
   setInterval(save,2500);
 })();
