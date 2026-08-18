@@ -12,10 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
 
-      - name: Make Firestore initialization singleton-safe
+      - name: Fix Firebase initialization race and cache
         shell: bash
         run: |
           set -e
@@ -23,71 +21,36 @@ jobs:
           from pathlib import Path
           p = Path('app.js')
           s = p.read_text()
-          old = '''db = initializeFirestore(firebaseApp, {
-              experimentalForceLongPolling: true,
-              useFetchStreams: false
-          });'''
-          new = '''if (window.__sheFirestoreDb) {
-              db = window.__sheFirestoreDb;
-          } else {
-              try {
-                  db = initializeFirestore(firebaseApp, {
-                      experimentalForceLongPolling: true,
-                      useFetchStreams: false
-                  });
-              } catch (firestoreInitError) {
-                  if (firestoreInitError?.code === "failed-precondition") {
-                      db = getFirestore(firebaseApp);
-                  } else {
-                      throw firestoreInitError;
-                  }
-              }
-              window.__sheFirestoreDb = db;
-          }'''
-          if old in s:
-              s = s.replace(old, new, 1)
-          elif 'window.__sheFirestoreDb' in s:
-              print('Firestore singleton patch already present.')
-          else:
-              raise SystemExit('Expected Firestore initialization block was not found; refusing to modify app.js')
+          if 'let firebaseInitPromise = null;' not in s:
+              s = s.replace('let firebaseInitialized = false;', 'let firebaseInitialized = false;\nlet firebaseInitPromise = null;', 1)
+          start_old = 'async function initializeFirebase() {\n    if (firebaseInitialized) return;'
+          start_new = 'function initializeFirebase() {\n    if (firebaseInitialized) return Promise.resolve(true);\n    if (firebaseInitPromise) return firebaseInitPromise;\n    firebaseInitPromise = (async () => {'
+          if start_old in s:
+              s = s.replace(start_old, start_new, 1)
+          elif 'firebaseInitPromise = (async () =>' not in s:
+              raise SystemExit('Firebase initialization start not found; refusing to modify app.js')
+          end_old = '''        return true;\n    } catch (error) {\n        console.error("❌ Firebase error:", error);\n        showDebug("❌ Firebase error: " + error.message);\n        return false;\n    }\n}\n\n// ============================================\n// DEBUG & UI HELPERS'''
+          end_new = '''        return true;\n    } catch (error) {\n        console.error("❌ Firebase error:", error);\n        showDebug("❌ Firebase error: " + error.message);\n        return false;\n    }\n    })();\n    return firebaseInitPromise;\n}\n\n// ============================================\n// DEBUG & UI HELPERS'''
+          if end_old in s:
+              s = s.replace(end_old, end_new, 1)
+          elif 'return firebaseInitPromise;' not in s:
+              raise SystemExit('Firebase initialization end not found; refusing to modify app.js')
           p.write_text(s)
-
-          p = Path('voice-note.js')
+          p = Path('chat.html')
           s = p.read_text()
-          old_import = 'const { getFirestore, collection, addDoc, doc, setDoc, serverTimestamp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");'
-          new_import = 'const { getFirestore, initializeFirestore, collection, addDoc, doc, setDoc, serverTimestamp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");'
-          if old_import in s:
-              s = s.replace(old_import, new_import, 1)
-          old_db = 'const db = getFirestore(app);'
-          new_db = '''let db = window.__sheFirestoreDb;
-      if (!db) {
-        try {
-          db = initializeFirestore(app, {
-            experimentalForceLongPolling: true,
-            useFetchStreams: false
-          });
-        } catch (e) {
-          if (e?.code === "failed-precondition") db = getFirestore(app);
-          else throw e;
-        }
-        window.__sheFirestoreDb = db;
-      }'''
-          if old_db in s:
-              s = s.replace(old_db, new_db, 1)
-          elif 'window.__sheFirestoreDb' not in s:
-              raise SystemExit('Expected voice Firestore instance was not found; refusing to modify voice-note.js')
+          s = s.replace('src="app.js"', 'src="app.js?v=20260818b"', 1)
           p.write_text(s)
           PY
 
-      - name: Commit and push if changed
+      - name: Commit and push
         shell: bash
         run: |
-          if git diff --quiet -- app.js voice-note.js; then
+          if git diff --quiet -- app.js chat.html; then
             echo "No changes needed."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app.js voice-note.js
-          git commit -m "Fix shared Firestore initialization"
+          git add app.js chat.html
+          git commit -m "Fix Firebase initialization race and refresh chat bundle"
           git push
