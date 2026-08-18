@@ -62,10 +62,23 @@ async function initializeFirebase() {
         
         firebaseApp = initializeApp(firebaseConfig);
         auth = getAuth(firebaseApp);
+        if (window.__sheFirestoreDb) {
+    db = window.__sheFirestoreDb;
+} else {
+    try {
         db = initializeFirestore(firebaseApp, {
-    experimentalForceLongPolling: true,
-    useFetchStreams: false
-});
+            experimentalForceLongPolling: true,
+            useFetchStreams: false
+        });
+    } catch (firestoreInitError) {
+        if (firestoreInitError?.code === "failed-precondition") {
+            db = getFirestore(firebaseApp);
+        } else {
+            throw firestoreInitError;
+        }
+    }
+    window.__sheFirestoreDb = db;
+}
         
         await setPersistence(auth, browserLocalPersistence);
         
