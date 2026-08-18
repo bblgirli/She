@@ -10,9 +10,9 @@
   "scope": "/",
   "icons": [
     {
-      "src": "/Img_9610%281%29.png",
+      "src": "/IMG_9610%20(1).jpeg",
       "sizes": "192x192",
-      "type": "image/png",
+      "type": "image/jpeg",
       "purpose": "any maskable"
     }
   ],
@@ -24,9 +24,9 @@
       "url": "/app.html",
       "icons": [
         {
-          "src": "/Img_9610%281%29.png",
+          "src": "/IMG_9610%20(1).jpeg",
           "sizes": "192x192",
-          "type": "image/png",
+          "type": "image/jpeg",
           "purpose": "any maskable"
         }
       ]
