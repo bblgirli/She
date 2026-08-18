@@ -1,0 +1,9 @@
+/* WhatsApp-style delivered/read check marks only. Scoped to message status ticks so the page layout is untouched. */
+.status-ticks.delivered,
+.status-ticks.read {
+  color: #53bdeb !important;
+}
+
+.status-ticks.sent {
+  color: #9aa0a6;
+}
