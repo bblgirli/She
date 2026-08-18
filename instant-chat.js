@@ -1,1 +1,21 @@
-(()=>{if(!/\/chat\.html$/i.test(location.pathname))return;const uid=localStorage.getItem('currentChatUid');if(!uid)return;const key='she_chat_snapshot_'+uid;function restore(){const box=document.getElementById('messages');if(!box)return false;try{const html=localStorage.getItem(key);if(html){box.innerHTML=html;return true}}catch(_){}return false}document.addEventListener('DOMContentLoaded',()=>{if(restore())return;let tries=0;const timer=setInterval(()=>{if(restore()||++tries>40)clearInterval(timer)},50);const box=document.getElementById('messages');if(!box)return;let saveTimer;const save=()=>{clearTimeout(saveTimer);saveTimer=setTimeout(()=>{try{const html=box.innerHTML;if(html&&html.replace(/<div id="typingIndicator"[^>]*>[\s\S]*?<\/div>/,'').trim())localStorage.setItem(key,html)}catch(_){}},150)};new MutationObserver(save).observe(box,{childList:true,subtree:true});});})();
+(()=>{
+  if(!/\/chat\.html$/i.test(location.pathname))return;
+  const uid=localStorage.getItem('currentChatUid');
+  if(!uid)return;
+  const key='she_chat_snapshot_'+uid;
+  document.addEventListener('DOMContentLoaded',()=>{
+    const box=document.getElementById('messages');
+    if(!box)return;
+    let saveTimer;
+    const save=()=>{
+      clearTimeout(saveTimer);
+      saveTimer=setTimeout(()=>{
+        try{
+          const html=box.innerHTML;
+          if(html&&html.replace(/<div id="typingIndicator"[^>]*>[\s\S]*?<\/div>/,'').trim())localStorage.setItem(key,html);
+        }catch(_){}
+      },150);
+    };
+    new MutationObserver(save).observe(box,{childList:true,subtree:true});
+  },{once:true});
+})();
