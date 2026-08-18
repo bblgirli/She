@@ -137,6 +137,14 @@
 
     </main>
 
+    <script>
+        // Safe fallback for older cached app.js builds. The current app.js
+        // provides the real presence function; this only prevents login from
+        // failing if an older deployed build is missing it.
+        if (typeof window.setCurrentUserPresence !== "function") {
+            window.setCurrentUserPresence = async function () {};
+        }
+    </script>
 
     <script type="module" src="app.js"></script>
 
