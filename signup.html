@@ -101,6 +101,9 @@
                 </button>
             </div>
 
+            <!-- Compatibility field for the existing signup handler. Hidden so the signup UI stays unchanged. -->
+            <input type="hidden" id="signupConfirm" name="signupConfirm">
+
             <button type="submit" class="main-button">
                 Sign Up
             </button>
@@ -120,6 +123,17 @@
         </p>
 
     </main>
+
+    <script>
+        // Keep the existing signup handler compatible without adding another visible field.
+        const signupPassword = document.getElementById('password');
+        const signupConfirm = document.getElementById('signupConfirm');
+        if (signupPassword && signupConfirm) {
+            const syncSignupPassword = () => { signupConfirm.value = signupPassword.value; };
+            signupPassword.addEventListener('input', syncSignupPassword);
+            document.getElementById('signupForm')?.addEventListener('submit', syncSignupPassword);
+        }
+    </script>
 
     <script type="module" src="app.js?v=20260814-1"></script>
 
