@@ -1,0 +1,46 @@
+name: Fix message bubble IDs
+
+on:
+  workflow_dispatch:
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Patch app.js safely
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
+          cd repo
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app.js')
+          s = p.read_text(encoding='utf-8')
+          needle = '                messagesContainer.appendChild(messageEl);'
+          replacement = '''                // Keep the real Firestore document ID on every rendered bubble so
+                // long-press, swipe, reaction, edit, delete and reply target the
+                // exact message document.
+                messageEl.dataset.messageId = messageDoc.id;
+                messageEl.setAttribute('data-message-id', messageDoc.id);
+                messagesContainer.appendChild(messageEl);'''
+          if "messageEl.dataset.messageId = messageDoc.id;" in s:
+              print('Bubble ID patch already present; nothing to do.')
+          elif needle not in s:
+              raise SystemExit('Expected message render append point was not found; refusing to modify app.js.')
+          else:
+              s = s.replace(needle, replacement, 1)
+              p.write_text(s, encoding='utf-8')
+          PY
+          if git diff --quiet -- app.js; then
+            echo 'No changes.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app.js
+          git commit -m 'Fix message bubble Firestore document IDs'
+          git push origin main
