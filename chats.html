@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,100 +10,30 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="She">
     <title>Chats</title>
-
     <link rel="stylesheet" href="style.css">
+    <script src="sync-stability.js?v=1"></script>
 </head>
-
 <body>
-
 <div class="phone-app">
-
-    <!-- HEADER -->
-
     <header class="app-header">
-
         <h1>Chats</h1>
-
         <div class="header-actions">
-
-            <button onclick="searchChats()">
-                🔍
-            </button>
-
-            <button onclick="openMenu()">
-                ⋮
-            </button>
-
+            <button onclick="searchChats()">🔍</button>
+            <button onclick="openMenu()">⋮</button>
         </div>
-
     </header>
-
-
-    <!-- CHAT FILTERS -->
-
     <div class="chat-tabs">
-
-        <button class="active">
-            All
-        </button>
-
-        <button>
-            Unread
-        </button>
-
-        <button>
-            Favorites
-        </button>
-
-        <button>
-            Groups
-        </button>
-
+        <button class="active">All</button><button>Unread</button><button>Favorites</button><button>Groups</button>
     </div>
-
-
-    <!-- CHAT LIST -->
-
     <main class="chat-list" id="chatList">
-        <div class="message received">
-            <p>Your conversations will appear here after you add someone by phone number.</p>
-        </div>
+        <div class="message received"><p>Your conversations will appear here after you add someone by phone number.</p></div>
     </main>
-    <!-- NEW CHAT BUTTON -->
-    <button
-        class="new-chat-button"
-        onclick="newChat()"
-    >
-        💬
-    </button>
-    <!-- BOTTOM NAVIGATION -->
+    <button class="new-chat-button" onclick="newChat()">💬</button>
     <nav class="bottom-nav">
-        <button class="nav-item active">
-            <span>💬</span>
-            <small>Chats</small>
-        </button>
-        <button
-            class="nav-item"
-            onclick="alert('Calls page coming next')"
-        >
-            <span>📞</span>
-            <small>Calls</small>
-        </button>
-        <button
-            class="nav-item"
-            onclick="alert('Status page coming next')"
-        >
-            <span>◉</span>
-            <small>Status</small>
-
-        </button>
-        <button
-            class="nav-item"
-            onclick="alert('Contacts page coming next')"
-        >
-            <span>👤</span>
-            <small>Contacts</small>
-        </button>
+        <button class="nav-item active"><span>💬</span><small>Chats</small></button>
+        <button class="nav-item" onclick="alert('Calls page coming next')"><span>📞</span><small>Calls</small></button>
+        <button class="nav-item" onclick="alert('Status page coming next')"><span>◉</span><small>Status</small></button>
+        <button class="nav-item" onclick="alert('Contacts page coming next')"><span>👤</span><small>Contacts</small></button>
     </nav>
 </div>
 <script type="module" src="app.js"></script>
