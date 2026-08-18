@@ -1,6 +1,6 @@
 {
-  "name": "She - Real-time Chat",
-  "short_name": "She",
+  "name": "Me And You",
+  "short_name": "Me And You",
   "description": "Real-time messaging app with voice calls and notifications",
   "start_url": "/index.html",
   "display": "standalone",
