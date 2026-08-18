@@ -10,10 +10,10 @@
   "scope": "/",
   "icons": [
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' fill='%23078b59' rx='45'/><path d='M60 60 L132 60 Q140 60 140 68 L140 140 Q140 148 132 148 L60 148 Q52 148 52 140 L52 68 Q52 60 60 60 Z' fill='none' stroke='white' stroke-width='6' stroke-linejoin='round'/><path d='M70 90 L96 110 L122 90' fill='none' stroke='white' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/></svg>",
+      "src": "/Img_9610(1).png",
       "sizes": "192x192",
-      "type": "image/svg+xml",
-      "purpose": "any"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ],
   "shortcuts": [
@@ -24,9 +24,10 @@
       "url": "/new-chat.html",
       "icons": [
         {
-          "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'><rect width='96' height='96' fill='%23078b59'/><path d='M30 30 L66 30 L66 66 L30 66 Z' fill='none' stroke='white' stroke-width='3'/><line x1='48' y1='38' x2='48' y2='58' stroke='white' stroke-width='3'/><line x1='38' y1='48' x2='58' y2='48' stroke='white' stroke-width='3'/></svg>",
-          "sizes": "96x96",
-          "type": "image/svg+xml"
+          "src": "/Img_9610(1).png",
+          "sizes": "192x192",
+          "type": "image/png",
+          "purpose": "any maskable"
         }
       ]
     }
