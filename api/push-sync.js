@@ -1,0 +1,74 @@
+const admin = require('firebase-admin');
+const webpush = require('web-push');
+
+function json(res,status,body){res.statusCode=status;res.setHeader('Content-Type','application/json');res.end(JSON.stringify(body));}
+
+function getAdmin(){
+  if(admin.apps.length) return admin.firestore();
+  const raw=process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  if(!raw) throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON is missing');
+  const serviceAccount=JSON.parse(raw);
+  admin.initializeApp({credential:admin.credential.cert(serviceAccount)});
+  return admin.firestore();
+}
+
+module.exports=async(req,res)=>{
+  if(req.method!=='GET'&&req.method!=='POST') return json(res,405,{ok:false,error:'Method not allowed'});
+  const auth=req.headers.authorization||'';
+  const secret=process.env.CRON_SECRET;
+  if(secret && auth!==`Bearer ${secret}`) return json(res,401,{ok:false,error:'Unauthorized'});
+  try{
+    const db=getAdmin();
+    const publicKey=process.env.VAPID_PUBLIC_KEY||process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY||process.env.WEB_PUSH_PUBLIC_KEY;
+    const privateKey=process.env.VAPID_PRIVATE_KEY||process.env.WEB_PUSH_PRIVATE_KEY;
+    const subject=process.env.VAPID_SUBJECT||process.env.WEB_PUSH_SUBJECT||'mailto:admin@m3ss3nger.app';
+    if(!publicKey||!privateKey) return json(res,500,{ok:false,error:'VAPID environment variables are missing'});
+    webpush.setVapidDetails(subject,publicKey,privateKey);
+
+    const now=admin.firestore.Timestamp.now();
+    const cutoff=admin.firestore.Timestamp.fromMillis(Date.now()-3*60*1000);
+    const convSnap=await db.collection('conversations').where('updatedAt','>=',cutoff).get();
+    let checked=0,delivered=0,skipped=0;
+
+    for(const convDoc of convSnap.docs){
+      checked++;
+      const c=convDoc.data()||{};
+      const participants=Array.isArray(c.participants)?c.participants:[];
+      if(participants.length<2) continue;
+      const unread=Array.isArray(c.unreadBy)?c.unreadBy:[];
+      const receiverUid=unread.find(uid=>uid&&uid!==c.lastMessageSenderId&&participants.includes(uid));
+      if(!receiverUid||!c.lastMessageSenderId||c.lastMessageSenderId===receiverUid) continue;
+
+      const latestSnap=await convDoc.ref.collection('messages').orderBy('createdAt','desc').limit(1).get();
+      const latest=latestSnap.docs[0];
+      if(!latest) continue;
+      const messageId=latest.id;
+      const message=latest.data()||{};
+      if(message.senderId!==c.lastMessageSenderId) continue;
+
+      const dispatchRef=db.collection('pushDispatches').doc(`${convDoc.id}_${messageId}_${receiverUid}`);
+      if((await dispatchRef.get()).exists){skipped++;continue;}
+
+      const subSnap=await db.doc(`pushSubscriptions/${receiverUid}`).get();
+      const subscription=subSnap.exists?(subSnap.data()||{}).subscription:null;
+      if(!subscription){skipped++;continue;}
+
+      const senderSnap=await db.doc(`users/${c.lastMessageSenderId}`).get();
+      const sender=senderSnap.exists?(senderSnap.data()||{}):{};
+      const body=message.text || (message.audioData?'🎤 Voice message':message.imageData?'📷 Photo':'📎 New message');
+      const payload={type:'new_message',senderName:sender.displayName||sender.email||'New message',body:String(body).slice(0,160),conversationId:convDoc.id};
+      try{
+        await webpush.sendNotification(subscription,JSON.stringify(payload),{TTL:86400,urgency:'normal'});
+        await dispatchRef.set({conversationId:convDoc.id,messageId,receiverUid,createdAt:now},{merge:true});
+        delivered++;
+      }catch(error){
+        if(error?.statusCode===404||error?.statusCode===410) await subSnap.ref.delete();
+        console.error('BACKGROUND PUSH DELIVERY',error?.statusCode,error?.message);
+      }
+    }
+    return json(res,200,{ok:true,checked,delivered,skipped});
+  }catch(error){
+    console.error('BACKGROUND PUSH SYNC',error);
+    return json(res,500,{ok:false,error:error?.message||'Background push sync failed'});
+  }
+};
