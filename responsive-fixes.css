@@ -1,4 +1,4 @@
-/* Final chat viewport layout: fill the visible screen with no bottom gap */
+/* Android/iPhone chat viewport — keep composer permanently visible */
 html.chat-page,
 body.chat-page {
   width: 100% !important;
@@ -15,25 +15,18 @@ body.chat-page {
   width: 100% !important;
   max-width: 480px !important;
   height: 100vh !important;
-  min-height: 0 !important;
-  max-height: none !important;
+  height: 100dvh !important;
   margin: 0 auto !important;
   padding: 0 !important;
   overflow: hidden !important;
-  display: flex !important;
-  flex-direction: column !important;
-}
-
-@supports (height: 100dvh) {
-  .chat-page .chat-app { height: 100dvh !important; }
+  display: block !important;
 }
 
 .chat-page .chat-header {
-  flex: 0 0 calc(60px + env(safe-area-inset-top)) !important;
+  position: relative !important;
   width: 100% !important;
   height: calc(60px + env(safe-area-inset-top)) !important;
   min-height: calc(60px + env(safe-area-inset-top)) !important;
-  max-height: calc(60px + env(safe-area-inset-top)) !important;
   box-sizing: border-box !important;
   padding: env(safe-area-inset-top) 10px 0 !important;
   display: flex !important;
@@ -41,7 +34,11 @@ body.chat-page {
 }
 
 .chat-page .messages {
-  flex: 1 1 auto !important;
+  position: absolute !important;
+  top: calc(60px + env(safe-area-inset-top)) !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 70px !important;
   width: 100% !important;
   min-width: 0 !important;
   min-height: 0 !important;
@@ -50,27 +47,24 @@ body.chat-page {
   overflow-x: hidden !important;
   overflow-y: auto !important;
   -webkit-overflow-scrolling: touch !important;
-  padding: 10px 12px 12px !important;
+  padding: 10px 12px 20px !important;
 }
 
-.chat-page .typing-indicator { flex: 0 0 auto !important; margin: 0 !important; }
-
-/* Android-safe message composer: never rely on fixed positioning, transforms,
-   or a hidden/zero-height parent. Keep it as the last flex child so it stays
-   visible above the Android browser/app bottom controls. */
+/* Do not let Android flex/viewport calculations push the composer off-screen. */
 .chat-page .message-footer {
-  position: relative !important;
-  inset: auto !important;
-  transform: none !important;
-  flex: 0 0 70px !important;
+  position: fixed !important;
+  left: 50% !important;
+  right: auto !important;
+  bottom: 0 !important;
+  top: auto !important;
+  transform: translateX(-50%) !important;
   width: 100% !important;
   max-width: 480px !important;
   height: 70px !important;
   min-height: 70px !important;
   max-height: 70px !important;
   margin: 0 !important;
-  padding: 6px 8px !important;
-  padding-bottom: max(6px, env(safe-area-inset-bottom)) !important;
+  padding: 6px 8px max(6px, env(safe-area-inset-bottom)) !important;
   box-sizing: border-box !important;
   display: flex !important;
   align-items: center !important;
@@ -78,8 +72,8 @@ body.chat-page {
   visibility: visible !important;
   opacity: 1 !important;
   overflow: visible !important;
-  z-index: 100 !important;
-  background: inherit !important;
+  z-index: 99999 !important;
+  background: #efe7dd !important;
 }
 
 .chat-page .message-input-container {
@@ -92,6 +86,8 @@ body.chat-page {
   max-height: 44px !important;
   box-sizing: border-box !important;
   overflow: hidden !important;
+  visibility: visible !important;
+  opacity: 1 !important;
 }
 
 .chat-page .message-input-container input {
