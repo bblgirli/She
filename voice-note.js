@@ -324,11 +324,23 @@
       const { firebaseConfig } = await import("./firebase-config.js");
       const { initializeApp, getApps } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
       const { getAuth } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
-      const { getFirestore, collection, addDoc, doc, setDoc, serverTimestamp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+      const { getFirestore, initializeFirestore, collection, addDoc, doc, setDoc, serverTimestamp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
 
       const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
       const auth = getAuth(app);
-      const db = getFirestore(app);
+      let db = window.__sheFirestoreDb;
+      if (!db) {
+        try {
+          db = initializeFirestore(app, {
+            experimentalForceLongPolling: true,
+            useFetchStreams: false
+          });
+        } catch (e) {
+          if (e?.code === "failed-precondition") db = getFirestore(app);
+          else throw e;
+        }
+        window.__sheFirestoreDb = db;
+      }
       const other = localStorage.getItem("currentChatUid");
       if (!auth.currentUser || !other) throw new Error("Chat session unavailable");
 
