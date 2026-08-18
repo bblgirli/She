@@ -145,6 +145,15 @@
                 deferredPrompt = null;
             });
         })();
+
+        // Register the PWA service worker so Chrome can install Me And You as a standalone app.
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function(){
+                navigator.serviceWorker.register('/sw.js').catch(function(error){
+                    console.error('PWA service worker registration failed:', error);
+                });
+            });
+        }
     </script>
 
     <script type="module" src="app.js"></script>
