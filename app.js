@@ -58,14 +58,11 @@ async function initializeFirebase() {
         
         const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
         const { getAuth, setPersistence, browserLocalPersistence } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
-        const { getFirestore, initializeFirestore } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const { getFirestore } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
         
         firebaseApp = initializeApp(firebaseConfig);
         auth = getAuth(firebaseApp);
-        db = initializeFirestore(firebaseApp, {
-    experimentalForceLongPolling: true,
-    useFetchStreams: false
-});
+        db = getFirestore(firebaseApp);
         
         await setPersistence(auth, browserLocalPersistence);
         
