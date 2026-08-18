@@ -51,17 +51,43 @@ jobs:
           else:
               raise SystemExit('Expected Firestore initialization block was not found; refusing to modify app.js')
           p.write_text(s)
+
+          p = Path('voice-note.js')
+          s = p.read_text()
+          old_import = 'const { getFirestore, collection, addDoc, doc, setDoc, serverTimestamp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");'
+          new_import = 'const { getFirestore, initializeFirestore, collection, addDoc, doc, setDoc, serverTimestamp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");'
+          if old_import in s:
+              s = s.replace(old_import, new_import, 1)
+          old_db = 'const db = getFirestore(app);'
+          new_db = '''let db = window.__sheFirestoreDb;
+      if (!db) {
+        try {
+          db = initializeFirestore(app, {
+            experimentalForceLongPolling: true,
+            useFetchStreams: false
+          });
+        } catch (e) {
+          if (e?.code === "failed-precondition") db = getFirestore(app);
+          else throw e;
+        }
+        window.__sheFirestoreDb = db;
+      }'''
+          if old_db in s:
+              s = s.replace(old_db, new_db, 1)
+          elif 'window.__sheFirestoreDb' not in s:
+              raise SystemExit('Expected voice Firestore instance was not found; refusing to modify voice-note.js')
+          p.write_text(s)
           PY
 
       - name: Commit and push if changed
         shell: bash
         run: |
-          if git diff --quiet -- app.js; then
+          if git diff --quiet -- app.js voice-note.js; then
             echo "No changes needed."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app.js
-          git commit -m "Make Firestore initialization singleton-safe"
+          git add app.js voice-note.js
+          git commit -m "Fix shared Firestore initialization"
           git push
