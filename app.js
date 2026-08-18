@@ -10,6 +10,7 @@ let auth = null;
 let db = null;
 let firebaseApp = null;
 let firebaseInitialized = false;
+let firebaseInitPromise = null;
 
 // Contacts and chats
 let userContacts = [];
@@ -49,8 +50,10 @@ let callHistoryListener = null;
 // ============================================
 // FIREBASE INITIALIZATION
 // ============================================
-async function initializeFirebase() {
-    if (firebaseInitialized) return;
+function initializeFirebase() {
+    if (firebaseInitialized) return Promise.resolve(true);
+    if (firebaseInitPromise) return firebaseInitPromise;
+    firebaseInitPromise = (async () => {
     
     try {
         console.log("🔥 Initializing Firebase...");
@@ -91,6 +94,8 @@ async function initializeFirebase() {
         showDebug("❌ Firebase error: " + error.message);
         return false;
     }
+    })();
+    return firebaseInitPromise;
 }
 
 // ============================================
