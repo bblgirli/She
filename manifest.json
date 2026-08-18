@@ -10,7 +10,7 @@
   "scope": "/",
   "icons": [
     {
-      "src": "/png_9601%281%29.png",
+      "src": "/IMG_9610%281%29.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
@@ -24,7 +24,7 @@
       "url": "/app.html",
       "icons": [
         {
-          "src": "/png_9601%281%29.png",
+          "src": "/IMG_9610%281%29.png",
           "sizes": "192x192",
           "type": "image/png",
           "purpose": "any"
