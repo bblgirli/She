@@ -1,0 +1,50 @@
+name: Fix voice Firestore initialization
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Make voice-note use the shared Firestore transport
+        shell: bash
+        run: |
+          set -e
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('voice-note.js')
+          s = p.read_text()
+          old_import = 'const { getFirestore, collection, addDoc, doc, setDoc, serverTimestamp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");'
+          new_import = 'const { getFirestore, initializeFirestore, collection, addDoc, doc, setDoc, serverTimestamp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");'
+          if old_import in s:
+              s = s.replace(old_import, new_import, 1)
+          elif 'initializeFirestore' not in s:
+              raise SystemExit('Expected Firestore import was not found; refusing to modify voice-note.js')
+          old_db = 'const db = getFirestore(app);'
+          new_db = '''let db = window.__sheFirestoreDb;\n      if (!db) {\n        try {\n          db = initializeFirestore(app, {\n            experimentalForceLongPolling: true,\n            useFetchStreams: false\n          });\n        } catch (e) {\n          if (e?.code === "failed-precondition") db = getFirestore(app);\n          else throw e;\n        }\n        window.__sheFirestoreDb = db;\n      }'''
+          if old_db in s:
+              s = s.replace(old_db, new_db, 1)
+          elif 'window.__sheFirestoreDb' not in s:
+              raise SystemExit('Expected voice Firestore instance was not found; refusing to modify voice-note.js')
+          p.write_text(s)
+          PY
+
+      - name: Commit and push if changed
+        shell: bash
+        run: |
+          if git diff --quiet -- voice-note.js; then
+            echo "No changes needed."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add voice-note.js
+          git commit -m "Use shared Firestore transport for voice notes"
+          git push
