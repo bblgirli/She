@@ -18,6 +18,10 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#fff}#appSh
 <button id="miniCallBar" type="button"><span>🟢</span><span id="miniCallName" class="grow">Call</span><span id="miniCallTime">00:00</span><span>Open</span></button><nav id="appNav"><button onclick="showView('chats')">💬<small>Chats</small></button><button onclick="showView('calls')">📞<small>Calls</small></button><button onclick="showView('status')">◉<small>Status</small></button><button onclick="showView('contacts')">👤<small>Contacts</small></button></nav></div>
 <script>history.replaceState({appShell:true},'', 'chats.html');</script>
 <script type="module" src="app.js"></script>
+<script>
+// Call audio processing only: request browser-level echo cancellation, noise suppression and auto gain control.
+(()=>{const md=navigator.mediaDevices;if(!md?.getUserMedia)return;const original=md.getUserMedia.bind(md);md.getUserMedia=(constraints={})=>{if(constraints.audio){constraints={...constraints,audio:typeof constraints.audio==='object'?{...constraints.audio,echoCancellation:{ideal:true},noiseSuppression:{ideal:true},autoGainControl:{ideal:true},channelCount:{ideal:1}}:{echoCancellation:{ideal:true},noiseSuppression:{ideal:true},autoGainControl:{ideal:true},channelCount:{ideal:1}}};}return original(constraints)};})();
+</script>
 <script src="push-notifications.js?v=1"></script><script src="voice-note.js?v=3"></script><script src="chat-bubbles.js?v=4"></script><script src="camera-image-fix.js?v=2"></script><script src="chat-media.js?v=2"></script><script src="cloudinary-image-renderer.js?v=2"></script><script src="voice-call-screen.js?v=3"></script><script src="voice-call-webrtc.js?v=2"></script><script src="live-call-v2.js?v=2"></script><script src="live-call-caller-v2.js?v=1"></script>
 <script>
 window.showView=function(name){document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));document.getElementById(name+'View')?.classList.add('active');if(name==='chats')window.loadChats?.();if(name==='calls')window.loadCallHistory?.();if(name==='contacts')window.loadContactsPage?.()};
