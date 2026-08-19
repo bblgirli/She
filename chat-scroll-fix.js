@@ -1,28 +1,28 @@
-/* Single-owner mobile chat scroll controller. Never scrolls on DOM updates. */
+/* Preserve the user's position while Firebase replaces message DOM. */
 (() => {
   'use strict';
   let box = null;
   let started = false;
   let userScrolledUp = false;
-  let initialisedAtBottom = false;
+  let wasAtBottom = true;
+  let mutationFrame = 0;
 
   const getBox = () => document.getElementById('messages');
   const isBottom = (el, tolerance = 32) => el.scrollHeight - el.scrollTop - el.clientHeight <= tolerance;
+  const updateArrow = () => window.updateChatScrollArrow?.();
 
-  function updateArrow() {
-    window.updateChatScrollArrow?.();
-  }
-
-  function scrollLatest(behavior = 'auto') {
+  function goBottom(behavior = 'auto') {
     if (!box) return;
     userScrolledUp = false;
+    wasAtBottom = true;
     box.scrollTo({ top: box.scrollHeight, behavior });
     updateArrow();
   }
 
   function onScroll() {
     if (!box) return;
-    userScrolledUp = !isBottom(box);
+    wasAtBottom = isBottom(box);
+    userScrolledUp = !wasAtBottom;
     updateArrow();
   }
 
@@ -33,21 +33,28 @@
 
     box.addEventListener('scroll', onScroll, { passive: true });
 
-    // One initial positioning only. No focus, Firebase, resize, or mutation auto-scroll.
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (!initialisedAtBottom) {
-          scrollLatest('auto');
-          initialisedAtBottom = true;
-        }
-      });
+    // Firebase/cache can render in several passes. Follow the newest message only
+    // during initial loading, never after the user deliberately scrolls upward.
+    const settle = () => {
+      if (!box) return;
+      if (!userScrolledUp && !wasAtBottom) wasAtBottom = isBottom(box);
+      if (!userScrolledUp) goBottom('auto');
+    };
+    requestAnimationFrame(() => requestAnimationFrame(settle));
+
+    const observer = new MutationObserver(() => {
+      // wasAtBottom is the state BEFORE this DOM mutation. Do not calculate it
+      // after Firebase has already changed scrollHeight.
+      if (wasAtBottom && !userScrolledUp) {
+        cancelAnimationFrame(mutationFrame);
+        mutationFrame = requestAnimationFrame(() => {
+          if (box && !userScrolledUp) goBottom('auto');
+        });
+      }
     });
+    observer.observe(box, { childList: true, subtree: true });
 
-    // Expose an explicit action for the send handler if it wants to follow a sent message.
-    window.scrollChatToBottom = () => scrollLatest('auto');
-
-    // Intentionally no MutationObserver, no pageshow scrolling, and no visualViewport scrolling.
-    // Firebase message rendering must never change the user's scroll position.
+    window.scrollChatToBottom = () => goBottom('smooth');
   }
 
   function wait() {
