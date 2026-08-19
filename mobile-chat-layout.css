@@ -1,0 +1,70 @@
+/* M3ss3nger mobile chat layout — iPhone + Android. Loaded only by chat.html. */
+@media (max-width: 768px) {
+  html, body { width:100%; max-width:100%; margin:0; padding:0; overflow:hidden; }
+  body.chat-page { min-height:100%; background:#efe7dd; }
+  body.chat-page .chat-app {
+    width:100%; max-width:none; height:100dvh; min-height:100dvh; max-height:100dvh;
+    margin:0; padding:0; overflow:hidden; position:relative;
+  }
+
+  /* Green header fills the complete top safe-area. Content stays inside the safe area. */
+  body.chat-page .chat-header {
+    width:100%; height:calc(74px + env(safe-area-inset-top));
+    min-height:calc(74px + env(safe-area-inset-top));
+    padding-top:env(safe-area-inset-top);
+    padding-left:max(10px, env(safe-area-inset-left));
+    padding-right:max(10px, env(safe-area-inset-right));
+    box-sizing:border-box;
+  }
+  body.chat-page .chat-header > * { min-width:0; }
+  body.chat-page .back-button { flex:0 0 38px; margin-right:4px; }
+  body.chat-page .chat-profile { min-width:0; overflow:hidden; }
+  body.chat-page .chat-profile > div:last-child { min-width:0; overflow:hidden; }
+  body.chat-page .chat-profile h3,
+  body.chat-page .chat-profile p { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  body.chat-page .chat-actions { flex:0 0 auto; gap:8px; margin-left:6px; }
+  body.chat-page .chat-actions .icon-btn { width:36px; height:44px; flex:0 0 36px; }
+
+  /* The messages are the only scrollable region. */
+  body.chat-page .messages {
+    width:100%; min-width:0; max-width:none; flex:1 1 auto;
+    overflow-x:hidden; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    padding-left:max(12px, env(safe-area-inset-left));
+    padding-right:max(12px, env(safe-area-inset-right));
+    padding-top:12px;
+    padding-bottom:calc(var(--composer-height, 62px) + 8px) !important;
+    scroll-padding-bottom:calc(var(--composer-height, 62px) + 8px) !important;
+  }
+
+  /* Composer is anchored to the visible viewport, not the page layout viewport. */
+  body.chat-page .message-footer {
+    position:fixed !important;
+    left:50%; bottom:0 !important;
+    transform:translateX(-50%);
+    width:100%; max-width:480px; min-width:0;
+    margin:0 !important;
+    padding-top:6px !important;
+    padding-left:max(8px, env(safe-area-inset-left));
+    padding-right:max(8px, env(safe-area-inset-right));
+    padding-bottom:env(safe-area-inset-bottom);
+    box-sizing:border-box;
+    background:#f7f7f7 !important;
+    z-index:1000;
+  }
+  body.chat-page .message-input-container {
+    width:100%; max-width:none; min-width:0;
+    margin:0 !important;
+    min-height:48px;
+  }
+  body.chat-page .message-input-container input { min-width:0; width:100%; font-size:16px; }
+
+  /* When keyboard is open, remove every extra vertical gap. */
+  body.chat-page.keyboard-open .message-footer {
+    padding-top:2px !important;
+    padding-bottom:0 !important;
+  }
+  body.chat-page.keyboard-open .messages {
+    padding-bottom:calc(var(--composer-height, 52px) + 2px) !important;
+    scroll-padding-bottom:calc(var(--composer-height, 52px) + 2px) !important;
+  }
+}
