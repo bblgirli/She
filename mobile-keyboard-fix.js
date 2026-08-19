@@ -32,3 +32,12 @@
   document.addEventListener('focusin', e => { if (e.target?.id === 'messageInput') schedule(); }, { passive: true });
   document.addEventListener('input', e => { if (e.target?.id === 'messageInput') schedule(); }, { passive: true });
 })();
+
+/* Load the active-status heartbeat on chat.html without touching app.js. */
+if (!window.__presenceHeartbeatLoaded) {
+  window.__presenceHeartbeatLoaded = true;
+  const script = document.createElement('script');
+  script.src = 'presence-heartbeat.js?v=1';
+  script.async = true;
+  document.head.appendChild(script);
+}
