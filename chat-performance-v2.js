@@ -5,6 +5,9 @@ const PROFILE_CACHE_PREFIX = "she_profile_cache_v2_";
 let perfAuth = null;
 let perfDb = null;
 let unsubscribeChats = null;
+let latestChats = [];
+let currentUid = null;
+let rendering = false;
 
 const cacheKey = uid => `${CHAT_CACHE_PREFIX}${uid}`;
 const profileKey = uid => `${PROFILE_CACHE_PREFIX}${uid}`;
@@ -52,9 +55,10 @@ function installStyles() {
 }
 function renderChats(items, uid, save=true) {
   const container = document.getElementById("chatList"); if (!container) return;
+  rendering = true;
   const sorted = [...items].sort((a,b)=>timestampMs(b.lastMessageTime||b.updatedAt)-timestampMs(a.lastMessageTime||a.updatedAt));
   if(save) writeJSON(cacheKey(uid), sorted);
-  if(!sorted.length){container.innerHTML='<div class="empty-chats">No chats yet. Start a new chat!</div>';return;}
+  if(!sorted.length){container.innerHTML='<div class="empty-chats">No chats yet. Start a new chat!</div>';rendering=false;return;}
   container.innerHTML = sorted.map(chat=>{
     const id=otherUid(chat,uid); if(!id) return "";
     const profile=readJSON(profileKey(id),{})||{};
@@ -66,8 +70,9 @@ function renderChats(items, uid, save=true) {
     return `<div class="chat-item ${unread?"unread":""}" data-chat-uid="${escapeHTML(id)}"><div class="avatar chat-avatar">${avatar}</div><div class="chat-info"><div class="chat-top"><h3>${escapeHTML(name)}</h3><span class="message-time">${formatListTime(chat.lastMessageTime||chat.updatedAt)}</span></div><div class="chat-bottom"><p>${escapeHTML(previewText(chat,uid))}</p>${unread?`<span class="unread-badge">${count}</span>`:""}</div></div></div>`;
   }).join("");
   container.querySelectorAll(".chat-item[data-chat-uid]").forEach(el=>el.addEventListener("click",()=>fastOpenChat(el.dataset.chatUid)));
+  requestAnimationFrame(()=>{rendering=false;});
 }
-function renderCached(uid){const cached=readJSON(cacheKey(uid),[]);if(cached.length)renderChats(cached,uid,false);}
+function renderCached(uid){const cached=readJSON(cacheKey(uid),[]);if(Array.isArray(cached)&&cached.length)renderChats(cached,uid,false);}
 async function refreshProfiles(chats,uid){
   try{
     const {doc,getDoc}=await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
@@ -76,22 +81,43 @@ async function refreshProfiles(chats,uid){
     renderChats(chats,uid,true);
   }catch{}
 }
+function watchForOldRenderer(){
+  const list=document.getElementById("chatList"); if(!list) return;
+  const observer=new MutationObserver(()=>{
+    if(rendering || !currentUid || !latestChats.length) return;
+    clearTimeout(window.__sheChatPerfRepairTimer);
+    window.__sheChatPerfRepairTimer=setTimeout(()=>{
+      if(!rendering) renderChats(latestChats,currentUid,false);
+    },0);
+  });
+  observer.observe(list,{childList:true,subtree:true});
+}
 async function start(){
   try{
-    const [{initializeApp,getApps},authMod,fs]=await Promise.all([
+    const [{getApps},authMod,fs]=await Promise.all([
       import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"),
       import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"),
       import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js")
     ]);
-    const app=getApps().find(a=>a.name==="she-chat-performance")||initializeApp(firebaseConfig,"she-chat-performance");
+    let tries=0;
+    while(!getApps().length && tries++<100) await new Promise(r=>setTimeout(r,50));
+    const apps=getApps();
+    if(!apps.length) throw new Error("Firebase is not initialized yet");
+    const app=apps[0];
     perfAuth=authMod.getAuth(app); perfDb=fs.getFirestore(app);
     authMod.onAuthStateChanged(perfAuth,user=>{
       if(!user)return;
-      const uid=user.uid; renderCached(uid);
-      const q=fs.query(fs.collection(perfDb,"conversations"),fs.where("participants","array-contains",uid));
+      currentUid=user.uid;
+      renderCached(currentUid);
+      const q=fs.query(fs.collection(perfDb,"conversations"),fs.where("participants","array-contains",currentUid));
       if(unsubscribeChats)unsubscribeChats();
-      unsubscribeChats=fs.onSnapshot(q,snapshot=>{const next=snapshot.docs.map(d=>({id:d.id,...d.data()}));renderChats(next,uid,true);refreshProfiles(next,uid);},err=>console.warn("Chat list sync error",err));
+      unsubscribeChats=fs.onSnapshot(q,snapshot=>{
+        latestChats=snapshot.docs.map(d=>({id:d.id,...d.data()}));
+        renderChats(latestChats,currentUid,true);
+        refreshProfiles(latestChats,currentUid);
+      },err=>console.warn("Chat list sync error",err));
     });
+    watchForOldRenderer();
   }catch(error){console.warn("Chat performance layer unavailable",error);}
 }
 function fastOpenChat(uid){
