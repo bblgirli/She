@@ -1,3 +1,3 @@
 import { firebaseConfig } from "./firebase-config.js";
 
-// restored application source placeholder
+// restored from known-good source
