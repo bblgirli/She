@@ -1,16 +1,28 @@
 /* M3ss3nger mobile-first stability layer. */
-@media (max-width:768px){
-html{width:100%;max-width:100%;overflow-x:hidden}body{width:100%;max-width:100%;min-height:100dvh;margin:0;overflow-x:hidden}*{box-sizing:border-box}img,video,canvas,iframe{max-width:100%}button,input,textarea,select{max-width:100%}.chat-container,.chat-page,.messages-container,#messages,#chatList{width:100%;max-width:100%;min-width:0}#chatList{overflow-x:hidden}.chat-item,.conversation-item{width:100%;max-width:100%;min-width:0;overflow:hidden}.chat-item>*,.conversation-item>*{min-width:0}.chat-item .preview,.chat-item .last-message,.conversation-item .preview,.conversation-item .last-message{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.message-bar,.message-input-container,#messageBar,.composer,.chat-input-area{max-width:100vw;width:100%}input,textarea{font-size:16px}.messages,#messages{padding-bottom:max(96px,calc(76px + env(safe-area-inset-bottom)))!important;scroll-padding-bottom:max(96px,calc(76px + env(safe-area-inset-bottom)))!important}.bottom-nav,.message-bar,.composer,.chat-input-area{padding-bottom:max(8px,env(safe-area-inset-bottom))}.app-shell,.page,main{max-width:100%}
+@media (max-width: 768px) {
+  html { width: 100%; max-width: 100%; overflow-x: hidden; }
+  body { width: 100%; max-width: 100%; min-height: 100dvh; margin: 0; overflow-x: hidden; }
+  * { box-sizing: border-box; }
+  img, video, canvas, iframe { max-width: 100%; }
+  button, input, textarea, select { max-width: 100%; }
+  .chat-container, .chat-page, .messages-container, #messages, #chatList { width: 100%; max-width: 100%; min-width: 0; }
+  #chatList { overflow-x: hidden; }
+  .chat-item, .conversation-item { width: 100%; max-width: 100%; min-width: 0; overflow: hidden; }
+  .chat-item > *, .conversation-item > * { min-width: 0; }
+  .chat-item .preview, .chat-item .last-message, .conversation-item .preview, .conversation-item .last-message { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .message-bar, .message-input-container, #messageBar, .composer, .chat-input-area { max-width: 100vw; width: 100%; }
+  input, textarea { font-size: 16px; }
+
+  /* Leave enough scroll space for the composer, including its mobile safe area. */
+  .messages, #messages {
+    padding-bottom: max(96px, calc(76px + env(safe-area-inset-bottom))) !important;
+    scroll-padding-bottom: max(96px, calc(76px + env(safe-area-inset-bottom))) !important;
+  }
+
+  .bottom-nav, .message-bar, .composer, .chat-input-area { padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+  .app-shell, .page, main { max-width: 100%; }
 }
-@supports (-webkit-touch-callout:none){
-@media (max-width:768px){
-html,body{min-height:-webkit-fill-available;height:-webkit-fill-available}
-.phone-app{height:100dvh;min-height:100dvh;height:-webkit-fill-available;min-height:-webkit-fill-available;display:flex;flex-direction:column;overflow:hidden}
-.app-header{flex:0 0 auto;padding-top:env(safe-area-inset-top);width:100%;min-height:calc(62px + env(safe-area-inset-top))}
-.chat-tabs{flex:0 0 auto;width:100%;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}
-.chat-list{flex:1 1 auto!important;min-height:0!important;height:auto!important;overflow-y:auto!important;overflow-x:hidden!important;-webkit-overflow-scrolling:touch!important;padding-bottom:calc(92px + env(safe-area-inset-bottom))!important}
-.bottom-nav{flex:0 0 auto;position:relative;bottom:auto;left:auto;width:100%;padding-bottom:max(8px,env(safe-area-inset-bottom));z-index:10}
-.new-chat-button{bottom:calc(74px + env(safe-area-inset-bottom))!important}
+
+@supports (height: 100dvh) {
+  @media (max-width: 768px) { body { min-height: 100dvh; } }
 }
-}
-@supports (height:100dvh){@media(max-width:768px){body{min-height:100dvh}}}

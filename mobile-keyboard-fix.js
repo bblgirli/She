@@ -1,43 +1,35 @@
-/* Mobile chat viewport alignment: keep the app composer flush with the visible screen. */
+/* Lightweight mobile viewport sync for the chat composer. */
 (function () {
   'use strict';
-  let raf = 0;
+
   function sync() {
-    raf = 0;
-    const vv = window.visualViewport;
     const root = document.documentElement;
-    const h = vv ? vv.height : window.innerHeight;
-    const top = vv ? vv.offsetTop : 0;
-    const keyboardOpen = !!vv && vv.height < window.innerHeight - 80;
-    root.style.setProperty('--mobile-vv-height', h + 'px');
-    root.style.setProperty('--mobile-vv-top', top + 'px');
+    const vv = window.visualViewport;
+    const height = vv ? vv.height : window.innerHeight;
+    root.style.setProperty('--mobile-vv-height', height + 'px');
+
     const footer = document.querySelector('.message-footer');
     if (footer) root.style.setProperty('--composer-height', footer.offsetHeight + 'px');
-    document.body.classList.toggle('keyboard-open', keyboardOpen);
-    document.body.classList.toggle('mobile-keyboard-open', keyboardOpen);
-    if (footer && keyboardOpen && vv) {
-      const keyboardTop = Math.max(0, window.innerHeight - (vv.offsetTop + vv.height));
-      footer.style.bottom = keyboardTop + 'px';
-    } else if (footer) {
-      footer.style.bottom = '0px';
-    }
-  }
-  function schedule() {
-    if (!raf) raf = requestAnimationFrame(sync);
-  }
-  sync();
-  window.addEventListener('resize', schedule, { passive: true });
-  window.visualViewport?.addEventListener('resize', schedule, { passive: true });
-  window.visualViewport?.addEventListener('scroll', schedule, { passive: true });
-  document.addEventListener('focusin', e => { if (e.target?.id === 'messageInput') schedule(); }, { passive: true });
-  document.addEventListener('input', e => { if (e.target?.id === 'messageInput') schedule(); }, { passive: true });
-})();
 
-/* Load the active-status heartbeat on chat.html without touching app.js. */
-if (!window.__presenceHeartbeatLoaded) {
-  window.__presenceHeartbeatLoaded = true;
-  const script = document.createElement('script');
-  script.src = 'presence-heartbeat.js?v=1';
-  script.async = true;
-  document.head.appendChild(script);
-}
+    document.body.classList.toggle('keyboard-open', !!vv && vv.height < window.innerHeight - 80);
+  }
+
+  function focusInput(input) {
+    if (!input) return;
+    requestAnimationFrame(sync);
+    setTimeout(sync, 120);
+    setTimeout(sync, 300);
+  }
+
+  sync();
+  window.addEventListener('resize', sync, { passive: true });
+  window.visualViewport?.addEventListener('resize', sync, { passive: true });
+
+  document.addEventListener('focusin', function (e) {
+    if (e.target && e.target.id === 'messageInput') focusInput(e.target);
+  }, { passive: true });
+
+  document.addEventListener('input', function (e) {
+    if (e.target && e.target.id === 'messageInput') requestAnimationFrame(sync);
+  }, { passive: true });
+})();
