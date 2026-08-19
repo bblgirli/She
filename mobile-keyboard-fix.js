@@ -1,38 +1,35 @@
-/* Mobile keyboard/composer fix for Android + iPhone Safari. */
+/* Lightweight mobile viewport sync for the chat composer. */
 (function () {
   'use strict';
 
-  function syncViewport() {
+  function sync() {
+    const root = document.documentElement;
     const vv = window.visualViewport;
     const height = vv ? vv.height : window.innerHeight;
-    const offsetTop = vv ? vv.offsetTop : 0;
-    const root = document.documentElement;
+    root.style.setProperty('--mobile-vv-height', height + 'px');
 
-    root.style.setProperty('--mobile-vv-height', `${height}px`);
-    root.style.setProperty('--mobile-vv-offset-top', `${offsetTop}px`);
+    const footer = document.querySelector('.message-footer');
+    if (footer) root.style.setProperty('--composer-height', footer.offsetHeight + 'px');
 
     document.body.classList.toggle('keyboard-open', !!vv && vv.height < window.innerHeight - 80);
   }
 
-  syncViewport();
-  window.addEventListener('resize', syncViewport, { passive: true });
-  window.visualViewport?.addEventListener('resize', syncViewport, { passive: true });
-  window.visualViewport?.addEventListener('scroll', syncViewport, { passive: true });
+  function focusInput(input) {
+    if (!input) return;
+    requestAnimationFrame(sync);
+    setTimeout(sync, 120);
+    setTimeout(sync, 300);
+  }
 
-  document.addEventListener('focusin', function (event) {
-    if (event.target?.id !== 'messageInput') return;
-    syncViewport();
-    setTimeout(syncViewport, 50);
-    setTimeout(syncViewport, 250);
-    setTimeout(function () {
-      event.target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-      syncViewport();
-    }, 350);
+  sync();
+  window.addEventListener('resize', sync, { passive: true });
+  window.visualViewport?.addEventListener('resize', sync, { passive: true });
+
+  document.addEventListener('focusin', function (e) {
+    if (e.target && e.target.id === 'messageInput') focusInput(e.target);
   }, { passive: true });
 
-  document.addEventListener('focusout', function (event) {
-    if (event.target?.id !== 'messageInput') return;
-    setTimeout(syncViewport, 100);
-    setTimeout(syncViewport, 350);
+  document.addEventListener('input', function (e) {
+    if (e.target && e.target.id === 'messageInput') requestAnimationFrame(sync);
   }, { passive: true });
 })();
