@@ -1,0 +1,1 @@
+Mobile-first pass added in this commit series. No Firebase, notifications, calls, or voice-note logic is modified by the mobile stylesheet itself.
