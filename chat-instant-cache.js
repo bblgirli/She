@@ -1,62 +1,76 @@
-/* Paint the last open conversation immediately, then let app.js/Firebase refresh it. */
+/* Lightweight mobile chat cache: restore immediately, save only after quiet periods. */
 (() => {
-  const CHAT_KEY = "currentChatUid";
-  const PREFIX = "she_chat_dom_v1_";
+  const uid = () => localStorage.getItem("currentChatUid") || new URLSearchParams(location.search).get("chat");
+  const box = () => document.getElementById("messages");
+  const key = id => `she_chat_dom_v1_${id}`;
+  let saveTimer = null;
   let restoring = false;
-  let observer = null;
-
-  const uid = () => localStorage.getItem(CHAT_KEY) || new URLSearchParams(location.search).get("chat");
-  const messages = () => document.getElementById("messages");
-  const key = id => `${PREFIX}${id}`;
 
   function restore(id) {
-    const box = messages();
-    if (!box || !id) return;
+    const el = box();
+    if (!el || !id) return;
     try {
       const cached = JSON.parse(localStorage.getItem(key(id)) || "null");
       if (!cached) return;
       restoring = true;
-      if (cached.header) {
-        const name = document.querySelector(".chat-profile h3");
-        if (name && cached.header.name) name.textContent = cached.header.name;
-      }
-      if (cached.html) {
-        const typing = document.getElementById("typingIndicator");
-        box.innerHTML = cached.html;
-        if (typing) box.appendChild(typing);
-      }
-      restoring = false;
-    } catch { restoring = false; }
+      const name = document.querySelector(".chat-profile h3");
+      if (name && cached.header?.name) name.textContent = cached.header.name;
+      if (cached.html) el.innerHTML = cached.html;
+      const typing = document.getElementById("typingIndicator");
+      if (typing) el.appendChild(typing);
+    } catch {}
+    restoring = false;
   }
 
-  function save(id) {
+  function saveNow(id) {
     if (!id || restoring) return;
-    const box = messages();
-    if (!box) return;
+    const el = box();
+    if (!el) return;
     try {
-      const clone = box.cloneNode(true);
+      const clone = el.cloneNode(true);
       clone.querySelector("#typingIndicator")?.remove();
+      const html = clone.innerHTML;
+      if (!html.trim()) return;
       localStorage.setItem(key(id), JSON.stringify({
-        html: clone.innerHTML,
+        html,
         header: { name: document.querySelector(".chat-profile h3")?.textContent || "Chat" },
         savedAt: Date.now()
       }));
     } catch {}
   }
 
+  function scheduleSave(id) {
+    if (restoring) return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => saveNow(id), 1200);
+  }
+
   function start() {
     const id = uid();
     if (!id) return;
     restore(id);
-    const box = messages();
-    if (!box) return;
-    observer = new MutationObserver(() => {
-      if (!restoring) requestAnimationFrame(() => save(id));
+    const el = box();
+    if (!el) return;
+
+    const observer = new MutationObserver(() => scheduleSave(id));
+    observer.observe(el, { childList: true });
+
+    window.addEventListener("pagehide", () => {
+      clearTimeout(saveTimer);
+      saveNow(id);
+      observer.disconnect();
+    }, { once: true });
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") {
+        clearTimeout(saveTimer);
+        saveNow(id);
+      }
     });
-    observer.observe(box, { childList:true, subtree:true });
-    requestAnimationFrame(() => save(id));
+
+    setTimeout(() => saveNow(id), 1500);
   }
 
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, {once:true});
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });
   else start();
 })();
