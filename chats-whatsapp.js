@@ -3,14 +3,15 @@
   'use strict';
 
   const USER_KEY = 'she_current_user';
-  const CACHE_PREFIX = 'she_chats_dom_v8_';
+  // Bump whenever the chat-row DOM structure changes so an old cached row can never
+  // bring the pre-WhatsApp layout back after iOS/Android resumes the page.
+  const CACHE_PREFIX = 'she_chats_dom_v9_';
   let restoring = false;
   let saveTimer = 0;
 
   const list = () => document.getElementById('chatList') || document.querySelector('.chat-list');
   const user = () => { try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null'); } catch { return null; } };
   const cacheKey = uid => CACHE_PREFIX + uid;
-  const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 
   function installCSS() {
     if (document.getElementById('sheWhatsAppChatCSS')) return;
@@ -64,11 +65,11 @@
 
   function scheduleSave(uid) {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => save(uid), 100);
+    saveTimer = setTimeout(() => save(uid), 350);
   }
 
   function normalizeRow(row) {
-    if (!row || row.dataset.whatsappNormalized === '1') return;
+    if (!row) return;
 
     const info = row.querySelector('.chat-info');
     if (!info) return;
@@ -77,7 +78,9 @@
     const badge = row.querySelector('.unread-badge');
     const preview = row.querySelector('.chat-bottom p');
 
-    // Move metadata into a dedicated right column. This is structural, not just CSS.
+    // Always verify the structure. app.js can update a row's innerHTML while keeping
+    // the same .chat-item node; relying on a one-time data flag caused the old layout
+    // to return after Firebase refresh/resume.
     let right = row.querySelector('.chat-right');
     if (!right) {
       right = document.createElement('div');
@@ -85,25 +88,34 @@
       row.appendChild(right);
     }
 
-    if (time) right.appendChild(time);
+    if (time && time.parentElement !== right) right.appendChild(time);
 
     if (badge) {
-      right.appendChild(badge);
+      if (badge.parentElement !== right) right.appendChild(badge);
     } else {
-      const placeholder = document.createElement('span');
-      placeholder.className = 'unread-placeholder';
-      placeholder.setAttribute('aria-hidden', 'true');
-      placeholder.textContent = '0';
-      right.appendChild(placeholder);
+      let placeholder = right.querySelector('.unread-placeholder');
+      if (!placeholder) {
+        placeholder = document.createElement('span');
+        placeholder.className = 'unread-placeholder';
+        placeholder.setAttribute('aria-hidden', 'true');
+        placeholder.textContent = '0';
+        right.appendChild(placeholder);
+      }
     }
 
-    // Keep the preview in the content column. Never place the unread badge beside it.
+    // Remove stale placeholders if a real unread badge appeared after a Firebase update.
+    right.querySelectorAll('.unread-placeholder').forEach(p => {
+      if (badge) p.remove();
+    });
+
     if (preview) {
       let previewWrap = row.querySelector('.chat-preview');
       if (!previewWrap) {
         previewWrap = document.createElement('div');
         previewWrap.className = 'chat-preview';
         preview.parentNode.insertBefore(previewWrap, preview);
+        previewWrap.appendChild(preview);
+      } else if (preview.parentElement !== previewWrap) {
         previewWrap.appendChild(preview);
       }
     }
@@ -167,6 +179,9 @@
     installCSS();
     const uid = user()?.uid;
     restore(uid);
+    // Normalize the restored snapshot immediately. This prevents an older-looking
+    // cached row from being visible while Firebase wakes up.
+    normalizeAll();
     installSearch();
     installTabs();
     installNavigation();
@@ -174,11 +189,24 @@
     const el = list();
     if (!el) return;
 
-    normalizeAll();
     const observer = new MutationObserver(() => {
       if (!restoring) normalizeAll();
     });
     observer.observe(el, { childList:true, subtree:true });
+
+    // iOS Safari/Android resume can restore the document without a normal reload.
+    // Re-apply the structure on visibility/pageshow so the cached/pre-Firebase DOM
+    // can never win over the WhatsApp layout.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        normalizeAll();
+        scheduleSave(uid);
+      }
+    });
+    window.addEventListener('pageshow', () => {
+      normalizeAll();
+      scheduleSave(uid);
+    });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once:true });
