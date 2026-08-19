@@ -1,4 +1,4 @@
-/* Android/iPhone chat viewport — keep composer permanently visible */
+/* Android/iPhone chat viewport — keep composer above the keyboard. */
 html.chat-page,
 body.chat-page {
   width: 100% !important;
@@ -14,8 +14,8 @@ body.chat-page {
   inset: 0 !important;
   width: 100% !important;
   max-width: 480px !important;
-  height: 100vh !important;
-  height: 100dvh !important;
+  height: var(--mobile-vv-height, 100dvh) !important;
+  max-height: var(--mobile-vv-height, 100dvh) !important;
   margin: 0 auto !important;
   padding: 0 !important;
   overflow: hidden !important;
@@ -47,16 +47,17 @@ body.chat-page {
   overflow-x: hidden !important;
   overflow-y: auto !important;
   -webkit-overflow-scrolling: touch !important;
-  padding: 10px 12px 20px !important;
+  padding: 10px 12px 96px !important;
+  scroll-padding-bottom: 96px !important;
 }
 
-/* Do not let Android flex/viewport calculations push the composer off-screen. */
 .chat-page .message-footer {
   position: fixed !important;
   left: 50% !important;
   right: auto !important;
-  bottom: 0 !important;
   top: auto !important;
+  /* visualViewport makes this rise with Android's resize/pan keyboard. */
+  bottom: max(0px, calc(100vh - var(--mobile-vv-height, 100vh) - var(--mobile-vv-offset-top, 0px))) !important;
   transform: translateX(-50%) !important;
   width: 100% !important;
   max-width: 480px !important;
@@ -74,6 +75,11 @@ body.chat-page {
   overflow: visible !important;
   z-index: 99999 !important;
   background: #efe7dd !important;
+}
+
+.chat-page.keyboard-open .message-footer {
+  /* Do not let safe-area padding create an extra gap above the keyboard. */
+  padding-bottom: 6px !important;
 }
 
 .chat-page .message-input-container {
@@ -97,6 +103,7 @@ body.chat-page {
   width: auto !important;
   height: 38px !important;
   max-width: none !important;
+  font-size: 16px !important;
   visibility: visible !important;
   opacity: 1 !important;
 }
