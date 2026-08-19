@@ -21,20 +21,16 @@ function cacheKey(uid) { return CACHE + uid; }
 function profileKey(uid) { return PROFILE + uid; }
 function preview(c, uid) { const t = c?.lastMessage || c?.message || c?.text || ""; if (!t) return "No messages yet"; return c.lastMessageSenderId === uid || c.senderId === uid ? `You: ${t}` : t; }
 
-/* The existing app already saves its state under she_app_state. Do not make the user wait for Firebase to recreate it. */
 function extractCachedChats(uid) {
   const state = read(APP_STATE, null);
-  const found = [];
-  const seen = new Set();
+  const found = [], seen = new Set();
   const visit = (value, depth = 0) => {
     if (!value || depth > 5) return;
     if (Array.isArray(value)) { value.forEach(v => visit(v, depth + 1)); return; }
     if (typeof value !== "object") return;
     if (Array.isArray(value.participants) && value.participants.includes(uid)) {
       const id = otherUid(value, uid);
-      if (id && !seen.has(id) && (value.lastMessage || value.message || value.updatedAt || value.lastMessageTime || value.createdAt)) {
-        seen.add(id); found.push({...value});
-      }
+      if (id && !seen.has(id) && (value.lastMessage || value.message || value.updatedAt || value.lastMessageTime || value.createdAt)) { seen.add(id); found.push({...value}); }
     }
     Object.values(value).forEach(v => visit(v, depth + 1));
   };
@@ -43,7 +39,7 @@ function extractCachedChats(uid) {
 }
 
 function installCSS() {
-  if $("#sheWhatsAppChatCSS")) return;
+  if ($("#sheWhatsAppChatCSS")) return;
   const s = document.createElement("style"); s.id = "sheWhatsAppChatCSS";
   s.textContent = `
     .phone-app .chat-list{padding:0 0 92px!important;overflow-x:hidden!important;overflow-y:auto!important;background:#fff!important}
@@ -101,8 +97,7 @@ function openInstant(uid) {
 document.addEventListener("click", (e) => {
   const row = e.target.closest?.("#chatList .chat-item[data-chat-uid]");
   if (!row) return;
-  e.preventDefault(); e.stopImmediatePropagation();
-  openInstant(row.dataset.chatUid);
+  e.preventDefault(); e.stopImmediatePropagation(); openInstant(row.dataset.chatUid);
 }, true);
 
 async function start() {
@@ -110,8 +105,6 @@ async function start() {
   const list = $("#chatList") || $(".chat-list"); if (!list) return;
   const storedUser = read(USER_KEY, null);
   if (storedUser?.uid) renderInstantCache(storedUser.uid);
-
-  /* Firebase is deliberately started only after the cached screen has been painted. */
   try {
     const [appMod, authMod, fs] = await Promise.all([
       import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"),
