@@ -1,91 +1,68 @@
-/* Keep chat at the real bottom without stealing the user's scroll position. */
+/* Keep chat at the newest message without forcing the page or keyboard to move. */
 (() => {
   'use strict';
   const getBox = () => document.getElementById('messages');
-  let userScrolledUp = false;
-  let initialSettled = false;
-  let lastMutationAt = 0;
+  let userMovedUp = false;
+  let started = false;
 
-  function atBottom(el, tolerance = 80) {
+  function isAtBottom(el, tolerance = 24) {
     return el.scrollHeight - el.scrollTop - el.clientHeight <= tolerance;
   }
 
-  function scrollBottom(behavior = 'auto') {
+  function goBottom() {
     const el = getBox();
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior });
+    el.scrollTop = el.scrollHeight;
   }
 
-  function settleInitial() {
-    const el = getBox();
-    if (!el || initialSettled) return;
-    initialSettled = true;
-    requestAnimationFrame(() => requestAnimationFrame(() => scrollBottom('auto')));
-  }
-
-  function onScroll() {
+  function markScrollState() {
     const el = getBox();
     if (!el) return;
-    userScrolledUp = !atBottom(el);
+    userMovedUp = !isAtBottom(el);
   }
 
-  function observe() {
+  function start() {
     const el = getBox();
-    if (!el) return;
-    el.addEventListener('scroll', onScroll, { passive: true });
+    if (!el || started) return;
+    started = true;
+
+    el.addEventListener('scroll', markScrollState, { passive: true });
+
+    // Only establish the initial position once. Never use focus/viewport scrolling.
+    requestAnimationFrame(() => requestAnimationFrame(goBottom));
 
     const observer = new MutationObserver(() => {
-      const wasAtBottom = atBottom(el);
-      lastMutationAt = Date.now();
-      if (!initialSettled) {
-        settleInitial();
-        return;
-      }
-      // New messages keep the user at the bottom only when they were already there.
-      // If they deliberately scrolled up, never drag them back down.
-      if (wasAtBottom && !userScrolledUp) {
-        requestAnimationFrame(() => scrollBottom('auto'));
+      // Capture the position BEFORE Firebase changes the DOM.
+      const wasAtBottom = isAtBottom(el);
+      if (wasAtBottom && !userMovedUp) {
+        requestAnimationFrame(goBottom);
       }
     });
     observer.observe(el, { childList: true, subtree: true });
 
-    // Firebase/cache rendering can happen in several batches.
-    [0, 80, 250, 600, 1200].forEach(ms => setTimeout(() => {
-      if (!userScrolledUp) scrollBottom('auto');
-    }, ms));
-
-    window.addEventListener('pageshow', () => {
-      userScrolledUp = false;
-      initialSettled = false;
-      settleInitial();
-    });
-
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && !userScrolledUp) {
-        requestAnimationFrame(() => scrollBottom('auto'));
-      }
-    });
-
-    // Expose an intentional bottom-scroll function for sendMessage/other modules.
+    // Explicit hook for sending a message.
     window.scrollChatToBottom = () => {
-      userScrolledUp = false;
-      scrollBottom('auto');
+      userMovedUp = false;
+      goBottom();
     };
 
-    // Restore focus without visualViewport.scrollIntoView(), which can move the whole page.
-    const input = document.getElementById('messageInput');
-    input?.addEventListener('focus', () => {
+    // Do NOT scroll the messages box on input focus. The browser keyboard
+    // should resize the available viewport; it must not change the chat position.
+    window.addEventListener('pageshow', () => {
       requestAnimationFrame(() => {
-        const box = getBox();
-        if (box && !userScrolledUp) scrollBottom('auto');
+        if (!userMovedUp) goBottom();
       });
-    }, { passive: true });
+    });
   }
 
-  function start() {
-    if (getBox()) observe();
-    else setTimeout(start, 50);
+  function wait() {
+    if (getBox()) start();
+    else setTimeout(wait, 50);
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
-  else start();
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', wait, { once: true });
+  } else {
+    wait();
+  }
 })();
