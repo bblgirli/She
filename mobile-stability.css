@@ -1,4 +1,4 @@
-/* M3ss3nger mobile-first stability layer. Scoped to narrow screens only. */
+/* M3ss3nger mobile-first stability layer. */
 @media (max-width: 768px) {
   html { width: 100%; max-width: 100%; overflow-x: hidden; }
   body { width: 100%; max-width: 100%; min-height: 100dvh; margin: 0; overflow-x: hidden; }
@@ -12,10 +12,17 @@
   .chat-item .preview, .chat-item .last-message, .conversation-item .preview, .conversation-item .last-message { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .message-bar, .message-input-container, #messageBar, .composer, .chat-input-area { max-width: 100vw; width: 100%; }
   input, textarea { font-size: 16px; }
-  .messages, #messages { padding-bottom: max(88px, env(safe-area-inset-bottom)); }
+
+  /* Leave enough scroll space for the composer, including its mobile safe area. */
+  .messages, #messages {
+    padding-bottom: max(96px, calc(76px + env(safe-area-inset-bottom))) !important;
+    scroll-padding-bottom: max(96px, calc(76px + env(safe-area-inset-bottom))) !important;
+  }
+
   .bottom-nav, .message-bar, .composer, .chat-input-area { padding-bottom: max(8px, env(safe-area-inset-bottom)); }
   .app-shell, .page, main { max-width: 100%; }
 }
+
 @supports (height: 100dvh) {
   @media (max-width: 768px) { body { min-height: 100dvh; } }
 }
