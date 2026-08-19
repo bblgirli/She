@@ -1,8 +1,8 @@
-/* Lightweight mobile chat cache: restore immediately, save only after quiet periods. */
+/* Lightweight mobile chat cache: restore immediately, but never restore a cached contact name. */
 (() => {
   const uid = () => localStorage.getItem("currentChatUid") || new URLSearchParams(location.search).get("chat");
   const box = () => document.getElementById("messages");
-  const key = id => `she_chat_dom_v1_${id}`;
+  const key = id => `she_chat_dom_v2_${id}`;
   let saveTimer = null;
   let restoring = false;
 
@@ -13,8 +13,6 @@
       const cached = JSON.parse(localStorage.getItem(key(id)) || "null");
       if (!cached) return;
       restoring = true;
-      const name = document.querySelector(".chat-profile h3");
-      if (name && cached.header?.name) name.textContent = cached.header.name;
       if (cached.html) el.innerHTML = cached.html;
       const typing = document.getElementById("typingIndicator");
       if (typing) el.appendChild(typing);
@@ -31,11 +29,7 @@
       clone.querySelector("#typingIndicator")?.remove();
       const html = clone.innerHTML;
       if (!html.trim()) return;
-      localStorage.setItem(key(id), JSON.stringify({
-        html,
-        header: { name: document.querySelector(".chat-profile h3")?.textContent || "Chat" },
-        savedAt: Date.now()
-      }));
+      localStorage.setItem(key(id), JSON.stringify({ html, savedAt: Date.now() }));
     } catch {}
   }
 
