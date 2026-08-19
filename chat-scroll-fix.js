@@ -1,68 +1,61 @@
-/* Keep chat at the newest message without forcing the page or keyboard to move. */
+/* Single-owner mobile chat scroll controller. Never scrolls on DOM updates. */
 (() => {
   'use strict';
-  const getBox = () => document.getElementById('messages');
-  let userMovedUp = false;
+  let box = null;
   let started = false;
+  let userScrolledUp = false;
+  let initialisedAtBottom = false;
 
-  function isAtBottom(el, tolerance = 24) {
-    return el.scrollHeight - el.scrollTop - el.clientHeight <= tolerance;
+  const getBox = () => document.getElementById('messages');
+  const isBottom = (el, tolerance = 32) => el.scrollHeight - el.scrollTop - el.clientHeight <= tolerance;
+
+  function updateArrow() {
+    window.updateChatScrollArrow?.();
   }
 
-  function goBottom() {
-    const el = getBox();
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
+  function scrollLatest(behavior = 'auto') {
+    if (!box) return;
+    userScrolledUp = false;
+    box.scrollTo({ top: box.scrollHeight, behavior });
+    updateArrow();
   }
 
-  function markScrollState() {
-    const el = getBox();
-    if (!el) return;
-    userMovedUp = !isAtBottom(el);
+  function onScroll() {
+    if (!box) return;
+    userScrolledUp = !isBottom(box);
+    updateArrow();
   }
 
   function start() {
-    const el = getBox();
-    if (!el || started) return;
+    box = getBox();
+    if (!box || started) return;
     started = true;
 
-    el.addEventListener('scroll', markScrollState, { passive: true });
+    box.addEventListener('scroll', onScroll, { passive: true });
 
-    // Only establish the initial position once. Never use focus/viewport scrolling.
-    requestAnimationFrame(() => requestAnimationFrame(goBottom));
-
-    const observer = new MutationObserver(() => {
-      // Capture the position BEFORE Firebase changes the DOM.
-      const wasAtBottom = isAtBottom(el);
-      if (wasAtBottom && !userMovedUp) {
-        requestAnimationFrame(goBottom);
-      }
-    });
-    observer.observe(el, { childList: true, subtree: true });
-
-    // Explicit hook for sending a message.
-    window.scrollChatToBottom = () => {
-      userMovedUp = false;
-      goBottom();
-    };
-
-    // Do NOT scroll the messages box on input focus. The browser keyboard
-    // should resize the available viewport; it must not change the chat position.
-    window.addEventListener('pageshow', () => {
+    // One initial positioning only. No focus, Firebase, resize, or mutation auto-scroll.
+    requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        if (!userMovedUp) goBottom();
+        if (!initialisedAtBottom) {
+          scrollLatest('auto');
+          initialisedAtBottom = true;
+        }
       });
     });
+
+    // Expose an explicit action for the send handler if it wants to follow a sent message.
+    window.scrollChatToBottom = () => scrollLatest('auto');
+
+    // Intentionally no MutationObserver, no pageshow scrolling, and no visualViewport scrolling.
+    // Firebase message rendering must never change the user's scroll position.
   }
 
   function wait() {
-    if (getBox()) start();
+    const el = getBox();
+    if (el) start();
     else setTimeout(wait, 50);
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', wait, { once: true });
-  } else {
-    wait();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wait, { once: true });
+  else wait();
 })();
