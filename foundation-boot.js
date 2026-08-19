@@ -8,36 +8,25 @@
   const USER_KEY = 'she_current_user';
   const CHAT_LIST_PREFIX = 'she_chats_dom_v2_';
   const CHAT_MESSAGES_PREFIX = 'she_chat_dom_v2_';
-
-  const readUser = () => {
-    try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null'); } catch { return null; }
-  };
-  const uid = () => readUser()?.uid || '';
+  const readUser = () => { try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null'); } catch { return null; } };
 
   function restoreChats() {
-    const userId = uid();
+    const userId = readUser()?.uid;
     const root = document.getElementById('chatList');
     if (!root || !userId || root.children.length) return;
     try {
       const html = localStorage.getItem(CHAT_LIST_PREFIX + userId);
-      if (html) {
-        root.innerHTML = html;
-        root.dataset.foundationRestored = '1';
-      }
+      if (html) { root.innerHTML = html; root.dataset.foundationRestored = '1'; }
     } catch {}
   }
 
   function restoreChat() {
-    const userId = uid();
-    const chatId = new URLSearchParams(location.search).get('chat') || localStorage.getItem('currentChatUid') || '';
+    const chatId = new URLSearchParams(location.search).get('chat') || localStorage.getItem('currentChatUid');
     const root = document.getElementById('messages');
-    if (!root || !userId || !chatId || root.children.length) return;
+    if (!root || !chatId || root.children.length) return;
     try {
-      const html = localStorage.getItem(CHAT_MESSAGES_PREFIX + userId + '_' + chatId);
-      if (html) {
-        root.innerHTML = html;
-        root.dataset.foundationRestored = '1';
-      }
+      const cached = JSON.parse(localStorage.getItem(CHAT_MESSAGES_PREFIX + chatId) || 'null');
+      if (cached?.html) { root.innerHTML = cached.html; root.dataset.foundationRestored = '1'; }
     } catch {}
   }
 
