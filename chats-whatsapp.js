@@ -32,13 +32,15 @@
       .chat-list .chat-item.unread .chat-top h3{font-weight:700!important}
       .chat-list .chat-item.unread .chat-bottom p{font-weight:600!important;color:#202925!important}
       .chat-list .unread-badge{flex:0 0 auto!important;min-width:20px!important;height:20px!important;padding:0 5px!important;margin-left:8px!important;border-radius:10px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;font-size:11px!important;font-weight:700!important;background:#078b59!important;color:#fff!important}
-      html[data-theme="dark"] .chat-list .chat-item{background:#1c1c1c!important;border-bottom-color:#333!important;color:#f3f3f3!important}
-      html[data-theme="dark"] .chat-list .chat-item:active{background:#252525!important}
-      html[data-theme="dark"] .chat-list .chat-top h3{color:#f3f3f3!important}
-      html[data-theme="dark"] .chat-list .message-time{color:#bdbdbd!important}
-      html[data-theme="dark"] .chat-list .chat-bottom p{color:#bdbdbd!important}
-      html[data-theme="dark"] .chat-list .chat-item.unread .chat-bottom p{color:#e4ebe8!important}
-      html[data-theme="dark"] .chat-list .chat-item.unread .chat-top h3{color:#fff!important}
+      @media (prefers-color-scheme: dark){
+        .chat-list .chat-item{background:#1c1c1c!important;border-bottom-color:#333!important;color:#f3f3f3!important}
+        .chat-list .chat-item:active{background:#252525!important}
+        .chat-list .chat-top h3{color:#f3f3f3!important}
+        .chat-list .message-time{color:#bdbdbd!important}
+        .chat-list .chat-bottom p{color:#bdbdbd!important}
+        .chat-list .chat-item.unread .chat-bottom p{color:#e4ebe8!important}
+        .chat-list .chat-item.unread .chat-top h3{color:#fff!important}
+      }
     `;
     document.head.appendChild(style);
   }
