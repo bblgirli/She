@@ -1,7 +1,6 @@
-/* She stability bootstrap v2
- * Keeps the existing UI/business logic intact while making page startup resilient.
- * Cache is scoped to the locally remembered user so one account can never paint
- * another account's chat list before Firebase finishes initializing.
+/* She stability bootstrap v3
+ * Startup cache is scoped to the authenticated user and stale chat selection is
+ * cleared when a different account is used on the same device.
  */
 (() => {
   "use strict";
@@ -9,6 +8,7 @@
   const FIREBASE_VERSION = "10.12.2";
   const FIREBASE_BASE = `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}`;
   const USER_KEY = "she_current_user";
+  const LAST_USER_KEY = "she_last_rendered_user";
 
   const firebasePreload = Promise.all([
     import(`${FIREBASE_BASE}/firebase-app.js`),
@@ -19,10 +19,7 @@
     return null;
   });
 
-  window.__SHE_STABILITY__ = {
-    firebasePreload,
-    version: 2
-  };
+  window.__SHE_STABILITY__ = { firebasePreload, version: 3 };
 
   function safeJsonGet(key) {
     try { return JSON.parse(localStorage.getItem(key) || "null"); } catch { return null; }
@@ -35,6 +32,17 @@
 
   function userId() {
     return currentUser()?.uid || currentUser()?.id || "";
+  }
+
+  function resetForAccountSwitch() {
+    const uid = userId();
+    if (!uid) return;
+    const previous = localStorage.getItem(LAST_USER_KEY) || "";
+    if (previous && previous !== uid) {
+      localStorage.removeItem("currentChatUid");
+      try { sessionStorage.removeItem("currentChatUid"); } catch {}
+    }
+    localStorage.setItem(LAST_USER_KEY, uid);
   }
 
   function currentChatId() {
@@ -55,12 +63,10 @@
     const container = document.getElementById("chatList");
     const key = chatListKey();
     if (!container || !key) return;
-
     const cached = safeJsonGet(key);
     if (!cached?.html) return;
     if (Date.now() - Number(cached.savedAt || 0) > 24 * 60 * 60 * 1000) return;
     if (container.children.length > 0) return;
-
     container.innerHTML = cached.html;
   }
 
@@ -68,7 +74,6 @@
     const container = document.getElementById("chatList");
     const key = chatListKey();
     if (!container || !key || !container.innerHTML.trim()) return;
-
     try {
       localStorage.setItem(key, JSON.stringify({ html: container.innerHTML, savedAt: Date.now() }));
     } catch (error) {
@@ -80,10 +85,8 @@
     const messages = document.getElementById("messages");
     const key = chatShellKey(currentChatId());
     if (!messages || !key) return;
-
     const cached = safeJsonGet(key);
     if (!cached?.html) return;
-
     try {
       messages.innerHTML = cached.html;
       const typing = document.getElementById("typingIndicator");
@@ -96,8 +99,13 @@
   }
 
   function bootCacheLayer() {
+    resetForAccountSwitch();
     restoreChatList();
     restoreChatShell();
+
+    if (document.body?.classList.contains("chat-page")) {
+      import("./read-receipts.js").catch(error => console.warn("[She receipts] Load failed", error));
+    }
 
     const chatList = document.getElementById("chatList");
     if (chatList) {
