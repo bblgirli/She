@@ -1,4 +1,4 @@
 // She application bootstrap.
-// The legacy runtime is kept intact behind this boundary while features migrate.
+// The legacy runtime remains the active runtime while the feature modules are
+// migrated safely. Do not initialize a second Firebase app here.
 import "./legacy-app.js";
-import "./feature-bootstrap.js";
