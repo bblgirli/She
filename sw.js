@@ -1,15 +1,6 @@
-const CACHE = 'me-and-you-v1';
-const APP_SHELL = ['/login.html', '/manifest.json'];
-self.addEventListener('install', event => { event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(APP_SHELL)).then(() => self.skipWaiting())); });
-self.addEventListener('activate', event => { event.waitUntil(self.clients.claim()); });
-self.addEventListener('fetch', event => {
-  if (event.request.method !== 'GET') return;
-  event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
-});
-self.addEventListener('notificationclick', event => {
-  event.notification.close();
-  event.waitUntil(clients.matchAll({type:'window', includeUncontrolled:true}).then(list => {
-    for (const client of list) if ('focus' in client) return client.focus();
-    if (clients.openWindow) return clients.openWindow('/login.html');
-  }));
-});
+const CACHE="she-shell-v2";
+const SHELL=["/chats.html","/chat.html","/calls.html","/contacts.html","/status.html","/style.css","/responsive.css","/responsive-fixes.css","/mobile-stability.css","/mobile-chat-layout.css","/global-theme.css","/navigation.css","/navigation.js","/app-stability.js","/app.js"];
+self.addEventListener("install",e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL).catch(()=>{})).then(()=>self.skipWaiting())));
+self.addEventListener("activate",e=>e.waitUntil(self.clients.claim()));
+self.addEventListener("fetch",e=>{const u=new URL(e.request.url);if(u.origin!==location.origin||e.request.method!=="GET")return;e.respondWith(caches.match(e.request).then(cached=>{const fresh=fetch(e.request).then(r=>{if(r.ok)caches.open(CACHE).then(c=>c.put(e.request,r.clone()));return r}).catch(()=>cached);return cached||fresh}))});
+self.addEventListener("notificationclick",e=>{e.notification.close();e.waitUntil(clients.matchAll({type:"window",includeUncontrolled:true}).then(list=>{for(const c of list)if("focus"in c)return c.focus();if(clients.openWindow)return clients.openWindow("/login.html")}))});
