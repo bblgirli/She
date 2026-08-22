@@ -1,16 +1,15 @@
-/* She stability bootstrap
+/* She stability bootstrap v2
  * Keeps the existing UI/business logic intact while making page startup resilient.
- * It preloads Firebase modules, restores cached chat shells immediately, and caches
- * rendered chat lists so navigation never has to start from a blank screen.
+ * Cache is scoped to the locally remembered user so one account can never paint
+ * another account's chat list before Firebase finishes initializing.
  */
 (() => {
   "use strict";
 
   const FIREBASE_VERSION = "10.12.2";
   const FIREBASE_BASE = `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}`;
+  const USER_KEY = "she_current_user";
 
-  // Start downloading Firebase modules as early as possible. app.js will reuse the
-  // browser's module cache when it performs its normal dynamic imports.
   const firebasePreload = Promise.all([
     import(`${FIREBASE_BASE}/firebase-app.js`),
     import(`${FIREBASE_BASE}/firebase-auth.js`),
@@ -22,26 +21,43 @@
 
   window.__SHE_STABILITY__ = {
     firebasePreload,
-    version: 1
+    version: 2
   };
-
-  function currentChatId() {
-    return localStorage.getItem("currentChatUid") || new URLSearchParams(location.search).get("chat") || "";
-  }
 
   function safeJsonGet(key) {
     try { return JSON.parse(localStorage.getItem(key) || "null"); } catch { return null; }
   }
 
+  function currentUser() {
+    const user = safeJsonGet(USER_KEY);
+    return user && (user.uid || user.id) ? user : null;
+  }
+
+  function userId() {
+    return currentUser()?.uid || currentUser()?.id || "";
+  }
+
+  function currentChatId() {
+    return localStorage.getItem("currentChatUid") || new URLSearchParams(location.search).get("chat") || "";
+  }
+
+  function chatListKey() {
+    const uid = userId();
+    return uid ? `she_chat_list_cache_v3_${uid}` : "";
+  }
+
+  function chatShellKey(chatId) {
+    const uid = userId();
+    return uid && chatId ? `she_chat_dom_v2_${uid}_${chatId}` : "";
+  }
+
   function restoreChatList() {
     const container = document.getElementById("chatList");
-    if (!container) return;
+    const key = chatListKey();
+    if (!container || !key) return;
 
-    const cached = safeJsonGet("she_chat_list_cache_v2");
+    const cached = safeJsonGet(key);
     if (!cached?.html) return;
-
-    // Only use a cache that is reasonably recent. Firebase will replace it with
-    // the authoritative list as soon as the listener is ready.
     if (Date.now() - Number(cached.savedAt || 0) > 24 * 60 * 60 * 1000) return;
     if (container.children.length > 0) return;
 
@@ -50,25 +66,22 @@
 
   function saveChatList() {
     const container = document.getElementById("chatList");
-    if (!container || !container.innerHTML.trim()) return;
+    const key = chatListKey();
+    if (!container || !key || !container.innerHTML.trim()) return;
 
     try {
-      localStorage.setItem("she_chat_list_cache_v2", JSON.stringify({
-        html: container.innerHTML,
-        savedAt: Date.now()
-      }));
+      localStorage.setItem(key, JSON.stringify({ html: container.innerHTML, savedAt: Date.now() }));
     } catch (error) {
-      // Storage can be unavailable or full; stability must never depend on it.
       console.warn("[She stability] Could not cache chat list.", error);
     }
   }
 
   function restoreChatShell() {
     const messages = document.getElementById("messages");
-    const chatId = currentChatId();
-    if (!messages || !chatId) return;
+    const key = chatShellKey(currentChatId());
+    if (!messages || !key) return;
 
-    const cached = safeJsonGet(`she_chat_dom_v1_${chatId}`);
+    const cached = safeJsonGet(key);
     if (!cached?.html) return;
 
     try {
