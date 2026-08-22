@@ -9,7 +9,6 @@ permissions:
 
 jobs:
   refactor:
-    if: ${{ hashFiles('.refactor-she') != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -18,7 +17,8 @@ jobs:
           ref: stability-rearchitecture
           fetch-depth: 0
 
-      - name: Move legacy application core behind a bootstrap
+      - name: Apply bootstrap cutover
+        if: ${{ hashFiles('.refactor-she') != '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -32,15 +32,11 @@ jobs:
           s = s.replace('from "./firebase-runtime.js"', 'from "../firebase-runtime.js"', 1)
           p.write_text(s)
           PY
-
           cat > app.js <<'EOF'
           // She application bootstrap.
-          // The legacy feature implementation is kept intact behind this boundary
-          // while feature modules are migrated one service at a time.
           import './core/legacy-app.js';
           import './feature-bootstrap.js';
           EOF
-
           rm .refactor-she
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
