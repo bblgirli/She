@@ -1,5 +1,7 @@
 // She application bootstrap.
-// The safety/fix layer is registered first so account switching can clear a
-// restored Firebase session before the legacy runtime redirects from login.
+// Shared architecture starts first so Firebase/session/data boundaries are
+// available before the existing feature runtime begins.
 import "./app-fixes.js";
+import "./core/bootstrap.js";
+import "./feature-bootstrap.js";
 import "./legacy-app.js";
