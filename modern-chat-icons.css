@@ -1,0 +1,14 @@
+/* Modern lightweight line icons for chat controls. */
+.chat-header .icon-btn,.message-input-container .icon-btn,.mic-button{font-size:0!important;width:40px;height:40px;display:inline-flex!important;align-items:center;justify-content:center;border:0;background:transparent;color:currentColor;border-radius:50%;position:relative}
+.chat-header .icon-btn::before,.message-input-container .icon-btn::before,.mic-button::before{font-family:Arial,sans-serif;font-size:21px;line-height:1;font-weight:400}
+.back-button::before{content:'‹';font-size:34px!important;font-weight:300!important}
+.chat-actions .icon-btn:nth-child(1)::before{content:'◉'}
+.chat-actions .icon-btn:nth-child(2)::before{content:'⌕';transform:rotate(-45deg)}
+.chat-actions .icon-btn:nth-child(3)::before{content:'⋯';font-size:26px!important}
+.message-input-container .icon-btn:first-child::before{content:'☺';font-size:22px!important}
+#sendMessageButton::before{content:'↑';font-size:24px!important;font-weight:600}
+#attachButton::before{content:'⌕';transform:rotate(-45deg);font-size:25px!important}
+#cameraButton::before{content:'▣';font-size:20px!important}
+.mic-button::before{content:'●';font-size:19px!important}
+.chat-header .icon-btn:active,.message-input-container .icon-btn:active,.mic-button:active{transform:scale(.92)}
+.chat-header .icon-btn:focus-visible,.message-input-container .icon-btn:focus-visible,.mic-button:focus-visible{outline:2px solid currentColor;outline-offset:2px}
