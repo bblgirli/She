@@ -1,4 +1,4 @@
-/* Cache-first chat paint: keep the previous conversation visible until fresh data is ready. */
+/* TRUE cache-first chat paint. Runs during HTML parsing, before app.js/Firebase. */
 (() => {
   "use strict";
   const cacheKey = uid => `she_chat_dom_v1_${uid}`;
@@ -16,6 +16,6 @@
       document.documentElement.classList.add("chat-cache-painted");
     } catch {}
   }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", paint, { once:true });
-  else paint();
+  // #messages already exists before this script in chat.html. Paint NOW, not after DOMContentLoaded.
+  paint();
 })();
