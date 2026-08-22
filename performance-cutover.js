@@ -1,4 +1,4 @@
-/* She performance cutover: cached-first pages + one live chat listener. */
+/* She performance cutover: active before legacy startup. Cached UI paints first; one live listener refreshes silently. */
 (() => {
   "use strict";
   const USER_KEY = "she_current_user";
@@ -35,5 +35,6 @@
     }, error => console.warn("She chat listener:", error));
   }
   function install() { const uid = user()?.uid; if (!uid) return; activeUid = uid; restoreChats(uid); window.loadChats = liveLoad; }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", install, { once: true }); else install();
+  // chats.html has #chatList before this script. Install immediately so legacy-app.js cannot win the race.
+  install();
 })();
