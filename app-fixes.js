@@ -1,5 +1,6 @@
-// Safe fixes layered on top of the legacy runtime.
-// Fixes: account switching, new-chat user discovery, and robust presence.
+// Stability fixes layered on top of the legacy runtime.
+// Fixes: reliable New Chat user discovery, clean account switching,
+// and connection-aware presence that expires stale "Online" states.
 import { firebaseConfig } from "./firebase-config.js";
 
 const FIREBASE_VERSION = "10.12.2";
@@ -12,10 +13,14 @@ let fixReady = false;
 let presenceTimer = null;
 let presenceUnsubscribe = null;
 let observedPresence = null;
+let presenceRenderTimer = null;
+let authUnsubscribe = null;
+let newChatLoadTimer = null;
+let newChatInputHandler = null;
 
 async function waitForFirebaseApp() {
     const { getApps, getApp, initializeApp } = await import(`https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}/firebase-app.js`);
-    for (let i = 0; i < 80; i++) {
+    for (let i = 0; i < 100; i++) {
         const apps = getApps();
         if (apps.length) return getApp();
         await new Promise(resolve => setTimeout(resolve, 50));
@@ -39,20 +44,24 @@ async function initFixRuntime() {
     }
 }
 
-async function waitForAuthUser(timeoutMs = 8000) {
+async function waitForAuthUser(timeoutMs = 10000) {
     if (!fixAuth) return null;
     try {
-        await Promise.race([
-            fixAuth.authStateReady?.() || Promise.resolve(),
-            new Promise(resolve => setTimeout(resolve, timeoutMs))
-        ]);
+        if (typeof fixAuth.authStateReady === "function") {
+            await Promise.race([
+                fixAuth.authStateReady(),
+                new Promise(resolve => setTimeout(resolve, timeoutMs))
+            ]);
+        } else {
+            await new Promise(resolve => setTimeout(resolve, Math.min(timeoutMs, 1000)));
+        }
     } catch (_) {}
     return fixAuth.currentUser || null;
 }
 
 async function writePresence(online) {
     const user = fixAuth?.currentUser;
-    if (!user || !fixDb) return;
+    if (!user || !fixDb) return false;
     try {
         const { doc, setDoc, serverTimestamp } = await import(`https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}/firebase-firestore.js`);
         await setDoc(doc(fixDb, "users", user.uid), {
@@ -61,17 +70,22 @@ async function writePresence(online) {
             lastActive: serverTimestamp(),
             ...(online ? {} : { lastSeen: serverTimestamp() })
         }, { merge: true });
+        return true;
     } catch (error) {
-        // A lost connection is expected to fail here. The heartbeat on other
-        // clients will mark this user offline once lastActive becomes stale.
         console.debug("Presence update deferred:", error?.code || error?.message || error);
+        return false;
     }
 }
 
-function formatLastSeen(value) {
-    if (!value) return "Offline";
+function toDate(value) {
+    if (!value) return null;
     const date = typeof value?.toDate === "function" ? value.toDate() : new Date(value);
-    if (Number.isNaN(date.getTime())) return "Offline";
+    return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatLastSeen(value) {
+    const date = toDate(value);
+    if (!date) return "Offline";
     const diff = Math.max(0, Date.now() - date.getTime());
     if (diff < 60000) return "Last seen just now";
     const mins = Math.floor(diff / 60000);
@@ -86,46 +100,63 @@ function applyPresenceToChat(userData) {
     const statusEl = document.querySelector(".chat-profile p");
     if (!statusEl) return;
 
-    const activeValue = userData?.lastActive;
-    const activeDate = activeValue?.toDate?.() || (activeValue ? new Date(activeValue) : null);
-    const fresh = activeDate && !Number.isNaN(activeDate.getTime()) && (Date.now() - activeDate.getTime()) < PRESENCE_STALE_MS;
+    const activeDate = toDate(userData?.lastActive);
+    const fresh = !!activeDate && (Date.now() - activeDate.getTime()) < PRESENCE_STALE_MS;
 
-    if (userData?.online === true && fresh) {
+    if (userData?.online === true && fresh && navigator.onLine !== false) {
         statusEl.textContent = "Online";
     } else {
+        // If the other device disappeared without sending an offline write,
+        // lastActive is still a trustworthy last-seen boundary.
         statusEl.textContent = formatLastSeen(userData?.lastSeen || userData?.lastActive);
     }
 }
 
 async function startPresence() {
+    if (!fixReady) return;
+
     const user = await waitForAuthUser();
-    if (!user) return;
+    if (!user) {
+        // Firebase may still be restoring the session while legacy-app.js boots.
+        // Retry briefly instead of giving up permanently.
+        setTimeout(() => startPresence(), 1000);
+        return;
+    }
 
     await writePresence(true);
     if (presenceTimer) clearInterval(presenceTimer);
-    presenceTimer = setInterval(() => writePresence(true), PRESENCE_INTERVAL_MS);
+    presenceTimer = setInterval(() => {
+        if (document.visibilityState !== "hidden" && navigator.onLine !== false) writePresence(true);
+    }, PRESENCE_INTERVAL_MS);
+
+    window.setCurrentUserPresence = writePresence;
 
     window.addEventListener("online", () => writePresence(true));
-    window.addEventListener("offline", () => writePresence(false));
-    document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") writePresence(true);
+    window.addEventListener("offline", () => {
+        // A browser cannot reliably write Firestore after the network is gone.
+        // Other clients use lastActive + the 45s stale threshold to show Last seen.
     });
-
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible" && navigator.onLine !== false) writePresence(true);
+    });
     window.addEventListener("pagehide", () => writePresence(false));
 
-    const chatUid = localStorage.getItem("currentChatUid");
-    if (chatUid && document.querySelector(".chat-profile p")) {
+    const bindChatPresence = async () => {
+        const chatUid = localStorage.getItem("currentChatUid");
+        if (!chatUid || !document.querySelector(".chat-profile p")) return;
         const { doc, onSnapshot } = await import(`https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}/firebase-firestore.js`);
         if (presenceUnsubscribe) presenceUnsubscribe();
         presenceUnsubscribe = onSnapshot(doc(fixDb, "users", chatUid), snapshot => {
             observedPresence = snapshot.data() || {};
             applyPresenceToChat(observedPresence);
         }, error => console.debug("Presence listener:", error?.code || error?.message || error));
-
-        setInterval(() => {
+        if (presenceRenderTimer) clearInterval(presenceRenderTimer);
+        presenceRenderTimer = setInterval(() => {
             if (observedPresence) applyPresenceToChat(observedPresence);
         }, 5000);
-    }
+    };
+
+    await bindChatPresence();
 }
 
 function renderUsers(users) {
@@ -138,16 +169,16 @@ function renderUsers(users) {
     }
 
     container.innerHTML = users.map(user => {
-        const name = String(user.displayName || "User");
+        const name = String(user.displayName || user.name || "User");
         const phone = user.phone ? ` • ${String(user.phone)}` : "";
         const email = String(user.email || "");
-        const photo = user.photoData
-            ? `<img src="${String(user.photoData)}" alt="Profile photo">`
+        const photo = user.photoData || user.photoURL || user.photoUrl
+            ? `<img src="${escapeHTML(user.photoData || user.photoURL || user.photoUrl)}" alt="Profile photo">`
             : "👤";
         const encodedUid = encodeURIComponent(String(user.uid));
         const encodedName = encodeURIComponent(name);
         return `
-            <div class="contact-item" data-user-uid="${encodedUid}" data-user-name="${encodedName}">
+            <div class="contact-item" data-user-uid="${encodedUid}" data-user-name="${encodedName}" role="button" tabindex="0">
                 <div class="contact-avatar">${photo}</div>
                 <div class="contact-info">
                     <h3>${escapeHTML(name)}</h3>
@@ -157,10 +188,14 @@ function renderUsers(users) {
     }).join("");
 
     container.querySelectorAll(".contact-item[data-user-uid]").forEach(item => {
-        item.addEventListener("click", () => {
+        const open = () => {
             const uid = decodeURIComponent(item.dataset.userUid || "");
             const name = decodeURIComponent(item.dataset.userName || "User");
-            window.startChatWithUser?.(uid, name);
+            if (typeof window.startChatWithUser === "function") window.startChatWithUser(uid, name);
+        };
+        item.addEventListener("click", open);
+        item.addEventListener("keydown", event => {
+            if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); }
         });
     });
 }
@@ -172,29 +207,42 @@ function escapeHTML(value) {
 }
 
 let cachedUsers = [];
+let usersCacheUid = null;
 
-async function loadAllChatUsers(searchTerm = "") {
-    if (!fixReady || !fixAuth?.currentUser || !fixDb) return;
+async function loadAllChatUsers(searchTerm = "", forceRefresh = false) {
+    if (!fixReady || !fixAuth || !fixDb) return false;
     const container = document.getElementById("newChatResults");
-    if (!container) return;
+    if (!container) return false;
+
+    const currentUser = await waitForAuthUser();
+    if (!currentUser) {
+        container.innerHTML = '<div class="message received"><p>Loading users…</p></div>';
+        setTimeout(() => loadAllChatUsers(searchTerm, forceRefresh), 800);
+        return false;
+    }
+
     try {
-        if (!cachedUsers.length) {
+        if (forceRefresh || usersCacheUid !== currentUser.uid || !cachedUsers.length) {
             const { collection, getDocs } = await import(`https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}/firebase-firestore.js`);
             const snapshot = await getDocs(collection(fixDb, "users"));
             cachedUsers = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+            usersCacheUid = currentUser.uid;
         }
+
         const term = String(searchTerm || "").trim().toLowerCase();
         const users = cachedUsers
-            .filter(user => user.uid && user.uid !== fixAuth.currentUser.uid)
+            .filter(user => String(user.uid || user.id) !== String(currentUser.uid))
             .filter(user => !term ||
-                String(user.displayName || "").toLowerCase().includes(term) ||
+                String(user.displayName || user.name || "").toLowerCase().includes(term) ||
                 String(user.phone || "").toLowerCase().includes(term) ||
                 String(user.email || "").toLowerCase().includes(term))
-            .sort((a, b) => String(a.displayName || "").localeCompare(String(b.displayName || "")));
+            .sort((a, b) => String(a.displayName || a.name || "").localeCompare(String(b.displayName || b.name || "")));
         renderUsers(users);
+        return true;
     } catch (error) {
         console.error("Could not load users for New Chat:", error);
         container.innerHTML = '<div class="message received"><p>Could not load users. Check your connection and try again.</p></div>';
+        return false;
     }
 }
 
@@ -202,37 +250,47 @@ function installNewChatFix() {
     const page = window.location.pathname.split("/").pop();
     if (page !== "new-chat.html") return;
 
-    window.searchContactsInput = event => {
-        const term = event?.target?.value || "";
-        loadAllChatUsers(term);
-    };
+    window.searchContactsInput = event => loadAllChatUsers(event?.target?.value || "");
     window.searchContacts = () => document.getElementById("newChatSearch")?.focus();
 
     const input = document.getElementById("newChatSearch");
-    input?.addEventListener("input", event => loadAllChatUsers(event.target.value));
+    if (input && !newChatInputHandler) {
+        newChatInputHandler = event => loadAllChatUsers(event.target.value || "");
+        input.addEventListener("input", newChatInputHandler);
+    }
+
+    const refresh = () => loadAllChatUsers(input?.value || "", true);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("online", refresh);
+
+    // Do not depend on Firebase finishing before DOMContentLoaded.
     loadAllChatUsers("");
+    if (newChatLoadTimer) clearInterval(newChatLoadTimer);
+    newChatLoadTimer = setInterval(() => {
+        const container = document.getElementById("newChatResults");
+        if (container && !container.querySelector(".contact-item")) loadAllChatUsers(input?.value || "");
+    }, 1500);
 }
 
 async function fixAccountSwitching() {
     const page = window.location.pathname.split("/").pop();
     if (page !== "login.html") return;
 
-    // The old login page immediately redirected when she_current_user existed,
-    // which made switching accounts unreliable. The login page is now a clean
-    // account boundary: restore Firebase, then explicitly sign out the previous
-    // session before allowing the next sign-in.
+    // A login page is always a hard account boundary. Clear the restored
+    // Firebase session and account-scoped local state before the user signs in.
     try {
         const user = await waitForAuthUser(5000);
         if (user) await writePresence(false);
         if (user) await fixAuth.signOut();
-        localStorage.removeItem("she_current_user");
-        localStorage.removeItem("currentChatUid");
-        localStorage.removeItem("currentChatName");
     } catch (error) {
         console.warn("Account switch cleanup:", error);
+    } finally {
         localStorage.removeItem("she_current_user");
         localStorage.removeItem("currentChatUid");
         localStorage.removeItem("currentChatName");
+        localStorage.removeItem("currentChatId");
+        cachedUsers = [];
+        usersCacheUid = null;
     }
 }
 
