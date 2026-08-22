@@ -1,8 +1,8 @@
 /* Presence + typing feature boundary. */
 
 export function createPresenceFeature({ getAuth, getDb }) {
-  let stopPresence = null;
-  let stopTyping = null;
+  let stopPresenceSubscription = null;
+  let stopTypingSubscription = null;
 
   async function setOnline(online) {
     if (typeof window.setCurrentUserPresence === "function") {
@@ -19,15 +19,20 @@ export function createPresenceFeature({ getAuth, getDb }) {
   }
 
   function stopTyping() {
-    if (typeof window.stopTypingStatus === "function") return window.stopTypingStatus();
-    stopTyping?.();
+    if (typeof window.stopTypingStatus === "function") {
+      return window.stopTypingStatus();
+    }
+    if (typeof stopTypingSubscription === "function") {
+      stopTypingSubscription();
+      stopTypingSubscription = null;
+    }
   }
 
   function dispose() {
-    stopPresence?.();
-    stopTyping?.();
-    stopPresence = null;
-    stopTyping = null;
+    if (typeof stopPresenceSubscription === "function") stopPresenceSubscription();
+    if (typeof stopTypingSubscription === "function") stopTypingSubscription();
+    stopPresenceSubscription = null;
+    stopTypingSubscription = null;
   }
 
   return { setOnline, setTyping, stopTyping, dispose, getAuth, getDb };
