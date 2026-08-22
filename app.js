@@ -1,6 +1,7 @@
 // She application bootstrap.
-// The legacy runtime remains the active runtime while feature services migrate.
-// This registry has no Firebase side effects and is safe to load at startup.
-import "./core/service-registry.js";
+// Keep the proven legacy runtime first; the shared feature layer is loaded after
+// Firebase/auth compatibility has been established so it cannot block startup.
 import "./legacy-app.js";
 import "./app-fixes.js";
+import "./core/service-registry.js";
+import "./feature-bootstrap.js";
