@@ -1,130 +1,21 @@
-/* She stability bootstrap v3
- * Startup cache is scoped to the authenticated user and stale chat selection is
- * cleared when a different account is used on the same device.
- */
+/* She stability bootstrap v4 */
 (() => {
-  "use strict";
-
-  const FIREBASE_VERSION = "10.12.2";
-  const FIREBASE_BASE = `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}`;
-  const USER_KEY = "she_current_user";
-  const LAST_USER_KEY = "she_last_rendered_user";
-
-  const firebasePreload = Promise.all([
-    import(`${FIREBASE_BASE}/firebase-app.js`),
-    import(`${FIREBASE_BASE}/firebase-auth.js`),
-    import(`${FIREBASE_BASE}/firebase-firestore.js`)
-  ]).catch((error) => {
-    console.warn("[She stability] Firebase preload failed; app.js will retry normally.", error);
-    return null;
-  });
-
-  window.__SHE_STABILITY__ = { firebasePreload, version: 3 };
-
-  function safeJsonGet(key) {
-    try { return JSON.parse(localStorage.getItem(key) || "null"); } catch { return null; }
-  }
-
-  function currentUser() {
-    const user = safeJsonGet(USER_KEY);
-    return user && (user.uid || user.id) ? user : null;
-  }
-
-  function userId() {
-    return currentUser()?.uid || currentUser()?.id || "";
-  }
-
-  function resetForAccountSwitch() {
-    const uid = userId();
-    if (!uid) return;
-    const previous = localStorage.getItem(LAST_USER_KEY) || "";
-    if (previous && previous !== uid) {
-      localStorage.removeItem("currentChatUid");
-      try { sessionStorage.removeItem("currentChatUid"); } catch {}
-    }
-    localStorage.setItem(LAST_USER_KEY, uid);
-  }
-
-  function currentChatId() {
-    return localStorage.getItem("currentChatUid") || new URLSearchParams(location.search).get("chat") || "";
-  }
-
-  function chatListKey() {
-    const uid = userId();
-    return uid ? `she_chat_list_cache_v3_${uid}` : "";
-  }
-
-  function chatShellKey(chatId) {
-    const uid = userId();
-    return uid && chatId ? `she_chat_dom_v2_${uid}_${chatId}` : "";
-  }
-
-  function restoreChatList() {
-    const container = document.getElementById("chatList");
-    const key = chatListKey();
-    if (!container || !key) return;
-    const cached = safeJsonGet(key);
-    if (!cached?.html) return;
-    if (Date.now() - Number(cached.savedAt || 0) > 24 * 60 * 60 * 1000) return;
-    if (container.children.length > 0) return;
-    container.innerHTML = cached.html;
-  }
-
-  function saveChatList() {
-    const container = document.getElementById("chatList");
-    const key = chatListKey();
-    if (!container || !key || !container.innerHTML.trim()) return;
-    try {
-      localStorage.setItem(key, JSON.stringify({ html: container.innerHTML, savedAt: Date.now() }));
-    } catch (error) {
-      console.warn("[She stability] Could not cache chat list.", error);
-    }
-  }
-
-  function restoreChatShell() {
-    const messages = document.getElementById("messages");
-    const key = chatShellKey(currentChatId());
-    if (!messages || !key) return;
-    const cached = safeJsonGet(key);
-    if (!cached?.html) return;
-    try {
-      messages.innerHTML = cached.html;
-      const typing = document.getElementById("typingIndicator");
-      if (typing) messages.appendChild(typing);
-      const name = document.querySelector(".chat-profile h3");
-      if (name && cached.header?.name) name.textContent = cached.header.name;
-    } catch (error) {
-      console.warn("[She stability] Could not restore chat shell.", error);
-    }
-  }
-
-  function bootCacheLayer() {
-    resetForAccountSwitch();
-    restoreChatList();
-    restoreChatShell();
-
-    if (document.body?.classList.contains("chat-page")) {
-      import("./read-receipts.js").catch(error => console.warn("[She receipts] Load failed", error));
-    }
-
-    const chatList = document.getElementById("chatList");
-    if (chatList) {
-      const observer = new MutationObserver(() => {
-        clearTimeout(window.__sheChatCacheTimer);
-        window.__sheChatCacheTimer = setTimeout(saveChatList, 700);
-      });
-      observer.observe(chatList, { childList: true, subtree: true });
-      window.addEventListener("pagehide", () => {
-        clearTimeout(window.__sheChatCacheTimer);
-        saveChatList();
-        observer.disconnect();
-      }, { once: true });
-    }
-  }
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", bootCacheLayer, { once: true });
-  } else {
-    bootCacheLayer();
-  }
+  const FIREBASE_VERSION="10.12.2";
+  const FIREBASE_BASE=`https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}`;
+  const USER_KEY="she_current_user", LAST_USER_KEY="she_last_rendered_user";
+  const safe=k=>{try{return JSON.parse(localStorage.getItem(k)||"null")}catch{return null}};
+  const user=()=>safe(USER_KEY), uid=()=>user()?.uid||user()?.id||"";
+  const chat=()=>localStorage.getItem("currentChatUid")||new URLSearchParams(location.search).get("chat")||"";
+  const firebasePreload=Promise.all([import(`${FIREBASE_BASE}/firebase-app.js`),import(`${FIREBASE_BASE}/firebase-auth.js`),import(`${FIREBASE_BASE}/firebase-firestore.js`)]).catch(()=>null);
+  window.__SHE_STABILITY__={firebasePreload,version:4};
+  const reset=()=>{const id=uid(),old=localStorage.getItem(LAST_USER_KEY)||"";if(id&&old&&old!==id){localStorage.removeItem("currentChatUid");try{sessionStorage.removeItem("currentChatUid")}catch{}}if(id)localStorage.setItem(LAST_USER_KEY,id)};
+  const listKey=()=>uid()?`she_chat_list_cache_v3_${uid()}`:"";
+  const fullKey=()=>uid()&&chat()?`she_chat_full_v2_${uid()}_${chat()}`:"";
+  const restoreList=()=>{const e=document.getElementById("chatList"),k=listKey(),c=k&&safe(k);if(e&&c?.html&&!e.children.length)e.innerHTML=c.html};
+  const saveList=()=>{const e=document.getElementById("chatList"),k=listKey();if(e&&k&&e.innerHTML.trim())try{localStorage.setItem(k,JSON.stringify({html:e.innerHTML,savedAt:Date.now()}))}catch{}};
+  const restoreFull=()=>{const e=document.getElementById("messages"),c=fullKey()&&safe(fullKey());if(e&&c?.html){e.innerHTML=c.html;const n=document.querySelector(".chat-profile h3");if(n&&c.header?.name)n.textContent=c.header.name}};
+  reset();restoreList();if(document.body?.classList.contains("chat-page")){restoreFull();const e=document.getElementById("messages"),c=fullKey()&&safe(fullKey()),count=c?.count||c?.html?.match(/class=["']message\b/g)?.length||0;if(e&&count)new MutationObserver(()=>{if(e.querySelectorAll(".message").length<count)e.innerHTML=c.html}).observe(e,{childList:true,subtree:true});}
+  if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js",{scope:"/"}).catch(()=>{});
+  const boot=()=>{if(document.body?.classList.contains("chat-page"))import("./read-receipts.js").catch(()=>{});const e=document.getElementById("chatList");if(e){const o=new MutationObserver(()=>{clearTimeout(window.__sheChatCacheTimer);window.__sheChatCacheTimer=setTimeout(saveList,700)});o.observe(e,{childList:true,subtree:true});window.addEventListener("pagehide",()=>{clearTimeout(window.__sheChatCacheTimer);saveList();o.disconnect()},{once:true})}};
+  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot,{once:true});else boot();
 })();
