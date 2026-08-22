@@ -1,21 +1,9 @@
-/* TRUE cache-first chat paint. Runs during HTML parsing, before app.js/Firebase. */
+/* TRUE cache-first chat paint. Uses only the full-conversation cache (v2). */
 (() => {
-  "use strict";
-  const cacheKey = uid => `she_chat_dom_v1_${uid}`;
-  const uid = () => localStorage.getItem("currentChatUid") || new URLSearchParams(location.search).get("chat");
-  const box = () => document.getElementById("messages");
-  function paint() {
-    const id = uid(), el = box();
-    if (!id || !el) return;
-    try {
-      const cached = JSON.parse(localStorage.getItem(cacheKey(id)) || "null");
-      if (!cached?.html?.trim()) return;
-      el.innerHTML = cached.html;
-      const typing = document.getElementById("typingIndicator");
-      if (typing) typing.style.display = "none";
-      document.documentElement.classList.add("chat-cache-painted");
-    } catch {}
-  }
-  // #messages already exists before this script in chat.html. Paint NOW, not after DOMContentLoaded.
-  paint();
+  const key=id=>`she_chat_full_v2_${id}`;
+  const uid=()=>localStorage.getItem("currentChatUid")||new URLSearchParams(location.search).get("chat");
+  const box=()=>document.getElementById("messages");
+  const id=uid(),el=box();
+  if(!id||!el)return;
+  try{const c=JSON.parse(localStorage.getItem(key(id))||"null");if(c?.html?.trim()){el.innerHTML=c.html;const n=document.querySelector(".chat-profile h3");if(n&&c.header?.name)n.textContent=c.header.name;document.documentElement.classList.add("chat-cache-painted")}}catch{}
 })();
