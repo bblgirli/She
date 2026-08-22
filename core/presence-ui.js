@@ -1,54 +1,32 @@
-/* Presence UI: never trusts an old online flag forever. */
+/* Stable chat presence UI. One timestamp source; never rewrites last-seen from client time. */
 (function () {
   "use strict";
-  let unsubscribe = null;
-  let interval = null;
-  let lastData = null;
-
-  function stamp(value) {
-    if (!value) return 0;
-    if (typeof value.toMillis === "function") return value.toMillis();
-    if (value.seconds) return value.seconds * 1000;
-    const n = new Date(value).getTime();
-    return Number.isFinite(n) ? n : 0;
+  let unsubscribe = null, timer = null, data = null;
+  const stamp = v => v?.toMillis ? v.toMillis() : v?.seconds ? v.seconds * 1000 : Number(new Date(v)) || 0;
+  function relative(ms) {
+    const diff = Math.max(0, Date.now() - ms), sec=Math.floor(diff/1000), min=Math.floor(sec/60), hr=Math.floor(min/60), day=Math.floor(hr/24);
+    if (sec < 60) return "just now";
+    if (min < 60) return `${min} minute${min===1?'':'s'} ago`;
+    if (hr < 24) return `${hr} hour${hr===1?'':'s'} ago`;
+    if (day < 7) return `${day} day${day===1?'':'s'} ago`;
+    return new Date(ms).toLocaleDateString([], {day:'numeric',month:'short',year:'numeric'});
   }
-
   function render() {
-    const el = document.querySelector(".chat-profile p");
-    if (!el || !lastData) return;
-    const active = stamp(lastData.lastActiveAt);
-    const fresh = active && (Date.now() - active < 75000);
-    if (lastData.online === true && fresh) {
-      el.textContent = "Online";
-      return;
-    }
-    if (lastData.lastSeen) {
-      const d = new Date(stamp(lastData.lastSeen));
-      el.textContent = `Last seen ${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
-    } else {
-      el.textContent = "Offline";
-    }
+    const el=document.getElementById('chatPresence') || document.querySelector('.chat-profile p');
+    if(!el||!data)return;
+    const active=stamp(data.lastActiveAt), fresh=active>0 && Date.now()-active<75000;
+    if(data.online===true && fresh){el.textContent='Online';return;}
+    const seen=stamp(data.lastSeen);
+    el.textContent=seen>0 ? `Last seen ${relative(seen)}` : 'Offline';
   }
-
-  function attach() {
-    const runtime = window.SheFirebase;
-    const uid = localStorage.getItem("currentChatUid");
-    if (!runtime?.db || !runtime?.firestore || !uid) return false;
-    if (unsubscribe) unsubscribe();
-    unsubscribe = runtime.firestore.onSnapshot(
-      runtime.firestore.doc(runtime.db, "users", uid),
-      snap => { lastData = snap.data() || {}; render(); },
-      () => { lastData = null; render(); }
-    );
-    if (interval) clearInterval(interval);
-    interval = setInterval(render, 15000);
-    return true;
+  function attach(){
+    const rt=window.SheFirebase, uid=localStorage.getItem('currentChatUid');
+    if(!rt?.db||!rt?.firestore||!uid)return false;
+    unsubscribe?.(); clearInterval(timer);
+    unsubscribe=rt.firestore.onSnapshot(rt.firestore.doc(rt.db,'users',uid),s=>{data=s.data()||{};render()},()=>{data=null;render()});
+    timer=setInterval(render,15000); return true;
   }
-
-  function retry() {
-    if (window.location.pathname.endsWith("chat.html")) attach();
-  }
-  if (!attach()) window.addEventListener("she:firebase-ready", retry, { once: true });
-  window.addEventListener("storage", e => { if (e.key === "currentChatUid") retry(); });
-  window.addEventListener("pagehide", () => { if (unsubscribe) unsubscribe(); if (interval) clearInterval(interval); });
+  if(!attach()) window.addEventListener('she:firebase-ready',attach,{once:true});
+  window.addEventListener('storage',e=>{if(e.key==='currentChatUid')attach()});
+  window.addEventListener('pagehide',()=>{unsubscribe?.();clearInterval(timer)});
 })();
