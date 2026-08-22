@@ -51,20 +51,8 @@
         <p class="terms">By continuing, you agree to our<br><a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a></p>
     </main>
     <script>
-        // A cached signed-in session must never be shown the login page again.
-        // Firebase can take a moment to restore its session, so let the app open
-        // immediately from the locally saved session instead of bouncing back to login.
-        (function keepSignedInSession() {
-            try {
-                if (localStorage.getItem('she_current_user')) {
-                    window.location.replace('chats.html');
-                    return;
-                }
-            } catch (e) {
-                console.warn('Could not read saved session:', e);
-            }
-        })();
-
+        // Account switching is handled by app-fixes.js after Firebase restores
+        // the previous session. Do not redirect from localStorage here.
         if (typeof window.setCurrentUserPresence !== "function") window.setCurrentUserPresence = async function () {};
         (function setupInstallPrompt(){
             let deferredPrompt = null;
