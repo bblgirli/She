@@ -3,7 +3,10 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /users/{userId} {
-      allow read, create, update: if request.auth != null && request.auth.uid == userId;
+      // Authenticated users need to discover other accounts in New Chat.
+      // Each user can still only create/update/delete their own profile.
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null && request.auth.uid == userId;
       allow delete: if false;
     }
 
