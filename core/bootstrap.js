@@ -16,6 +16,7 @@ const ready = getFirebaseRuntime().then((runtime) => {
     appModule: runtime.appModule,
     authModule: runtime.authModule
   };
+  window.dispatchEvent(new Event("she:firebase-ready"));
   return initializeCoreFirebase().catch(() => runtime);
 }).catch((error) => {
   console.warn("She shared architecture bootstrap failed; legacy runtime may continue:", error);
